@@ -166,7 +166,7 @@ export function buildCardEntries(items: string[], type: string, user: InternalUs
             .ele('id', item.toLowerCase().replace(' ', '-')).up()
             .ele('title', item).up()
             .ele('updated', new Date().toISOString()).up()
-            .ele('link', {'type': 'application/atom+xml;profile=opds-catalog', 'rel': 'subsection', 'href': `/opds/libraries/${libraryId}?name=${item}&type=${type}`}).up()
+            .ele('link', {'type': 'application/atom+xml;profile=opds-catalog', 'rel': 'subsection', 'href': `/opds/libraries/${libraryId}?name=${encodeURI(item)}&type=${type}`}).up()
     });
 }
 
