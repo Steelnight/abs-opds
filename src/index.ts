@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express'
+import express, { Request, Response } from 'express'
 import { InternalUser } from './types/internal'
 import 'dotenv/config'
 import {
@@ -10,7 +10,7 @@ import {
     buildOPDSXMLSkeleton,
     buildSearchDefinition
 } from './helpers/abs'
-import { apiCall, loginToAudiobookshelf, proxyToAudiobookshelf } from './helpers/api'
+import { apiCall, proxyToAudiobookshelf } from './helpers/api'
 import { Library, LibraryItem } from './types/library'
 import { hash } from 'crypto'
 import { loadLocalizations } from './i18n/i18n'
@@ -19,15 +19,19 @@ const app = express()
 const port = process.env.PORT || 3010
 export const useProxy = process.env.USE_PROXY === 'true' || false
 export const serverURL = process.env.ABS_URL || 'http://localhost:3000'
-const internalUsersString = process.env.OPDS_USERS || ''
 const showAudioBooks = process.env.SHOW_AUDIOBOOKS === 'true' || false
 const showCharCards = process.env.SHOW_CHAR_CARDS === 'true' || false
 await loadLocalizations()
 
-const internalUsers: InternalUser[] = internalUsersString.split(',').map((user) => {
-    const [name, apiKey, password] = user.split(':')
-    return { name, apiKey, password }
-})
+const absApiToken = process.env.ABS_API_TOKEN || ''
+if (!absApiToken) {
+    throw new Error('ABS_API_TOKEN environment variable is not set')
+}
+
+const user: InternalUser = {
+    name: 'opds-user',
+    apiKey: absApiToken
+}
 
 interface CacheEntry {
     timestamp: number
@@ -35,94 +39,6 @@ interface CacheEntry {
 }
 const libraryItemsCache: Record<string, CacheEntry> = {}
 const CACHE_EXPIRATION = 60 * 60 * 1000 // 1 hour in milliseconds
-
-async function authenticateUser(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const authHeader = req.headers.authorization
-
-    if (process.env.NODE_ENV === 'development') {
-        console.log(`[DEBUG] Auth attempt for ${req.method} ${req.path}`)
-        console.log(`[DEBUG] Auth header present: ${!!authHeader}`)
-    }
-
-    if (!authHeader || !authHeader.startsWith('Basic ')) {
-        if (process.env.NODE_ENV === 'development') {
-            console.log('[DEBUG] No valid Basic Auth header found')
-        }
-        res.set('WWW-Authenticate', 'Basic realm="OPDS"')
-        res.status(401).send('Authentication required')
-        return
-    }
-
-    try {
-        const base64Credentials = authHeader.split(' ')[1]
-        const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii')
-        const [username, password] = credentials.split(':')
-
-        if (!username || !password) {
-            if (process.env.NODE_ENV === 'development') {
-                console.log('[DEBUG] Invalid credentials format')
-            }
-            res.set('WWW-Authenticate', 'Basic realm="OPDS"')
-            res.status(401).send('Invalid credentials format')
-            return
-        }
-
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`[DEBUG] Attempting authentication for user: ${username}`)
-        }
-
-        // First try internal users (for backwards compatibility)
-        const internalUser = internalUsers.find(
-            (u) => u.name.toLowerCase() === username.toLowerCase() && u.password === password
-        )
-
-        if (internalUser) {
-            if (process.env.NODE_ENV === 'development') {
-                console.log(`[DEBUG] Internal user authenticated: ${username}`)
-            }
-            req.user = internalUser
-            next()
-            return
-        }
-
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`[DEBUG] Trying Audiobookshelf authentication for: ${username}`)
-        }
-
-        const user = await loginToAudiobookshelf(username, password)
-        if (user) {
-            if (process.env.NODE_ENV === 'development') {
-                console.log(`[DEBUG] Audiobookshelf user authenticated: ${username}`)
-            }
-            req.user = user
-            next()
-            return
-        }
-
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`[DEBUG] Authentication failed for user: ${username}`)
-        }
-        res.set('WWW-Authenticate', 'Basic realm="OPDS"')
-        res.status(401).send('Invalid username or password')
-        return
-    } catch (error) {
-        console.error('Authentication error:', error)
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`[DEBUG] Authentication exception: ${error}`)
-        }
-        res.set('WWW-Authenticate', 'Basic realm="OPDS"')
-        res.status(401).send('Authentication failed')
-        return
-    }
-}
-
-declare global {
-    namespace Express {
-        interface Request {
-            user?: InternalUser
-        }
-    }
-}
 
 app.get('/opds/proxy/{*any}', (req, res) => proxyToAudiobookshelf(req, res))
 
@@ -152,9 +68,7 @@ const parseItems = (items: any): LibraryItem[] =>
         }))
         .filter((item: LibraryItem) => item.format !== undefined || showAudioBooks)
 
-app.get('/opds', authenticateUser, async (req: Request, res: Response) => {
-    const user = req.user!
-
+app.get('/opds', async (req: Request, res: Response) => {
     const libraries = await apiCall(`/libraries`, user)
     const parsedLibaries: Library[] = libraries.libraries.map((library: any) => ({
         id: library.id,
@@ -176,8 +90,7 @@ app.get('/opds', authenticateUser, async (req: Request, res: Response) => {
     )
 })
 
-app.get('/opds/libraries/:libraryId', authenticateUser, async (req: Request, res: Response) => {
-    const user = req.user!
+app.get('/opds/libraries/:libraryId', async (req: Request, res: Response) => {
     const lang = req.headers['accept-language']
 
     if (req.query.categories) {
@@ -285,15 +198,11 @@ app.get('/opds/libraries/:libraryId', authenticateUser, async (req: Request, res
     )
 })
 
-app.get('/opds/libraries/:libraryId/search-definition', authenticateUser, async (req: Request, res: Response) => {
-    const user = req.user!
-
+app.get('/opds/libraries/:libraryId/search-definition', async (req: Request, res: Response) => {
     res.type('application/xml').send(buildSearchDefinition(req.params.libraryId, user))
 })
 
-app.get('/opds/libraries/:libraryId/:type', authenticateUser, async (req: Request, res: Response) => {
-    const user = req.user!
-
+app.get('/opds/libraries/:libraryId/:type', async (req: Request, res: Response) => {
     if (
         req.params.type !== 'authors' &&
         req.params.type !== 'narrators' &&

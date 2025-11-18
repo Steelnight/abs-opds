@@ -2,57 +2,6 @@ import { InternalUser } from '../types/internal'
 import type { Request, Response } from 'express'
 import axios from 'axios'
 import { serverURL, useProxy } from '../index'
-import crypto from 'crypto'
-
-interface CachedToken {
-    hashedToken: string
-    expires: number
-}
-
-const tokenCache = new Map<string, CachedToken>()
-const CACHE_TTL = 10 * 60 * 1000 
-
-// https://stackoverflow.com/questions/6953286/how-to-encrypt-data-that-needs-to-be-decrypted-in-node-js
-function encryptTokenWithPassword(token: string, password: string): string {
-    const key = crypto.scryptSync(password, 'salt', 32)
-    const iv = crypto.randomBytes(16)
-    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv)
-    let encrypted = cipher.update(token, 'utf8', 'hex')
-    encrypted += cipher.final('hex')
-    return iv.toString('hex') + ':' + encrypted
-}
-
-function decryptToken(hashedToken: string, password: string): string {
-    const [ivHex, encrypted] = hashedToken.split(':')
-    const key = crypto.scryptSync(password, 'salt', 32)
-    const iv = Buffer.from(ivHex, 'hex')
-    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv)
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8')
-    decrypted += decipher.final('utf8')
-    return decrypted
-}
-
-function getCachedToken(username: string, password: string): string | null {
-    const cached = tokenCache.get(username)
-    if (!cached || Date.now() > cached.expires) {
-        if (cached) tokenCache.delete(username)
-        return null
-    }
-    try {
-        return decryptToken(cached.hashedToken, password)
-    } catch {
-        tokenCache.delete(username)
-        return null
-    }
-}
-
-function setCachedToken(username: string, token: string, password: string): void {
-    const hashedToken = encryptTokenWithPassword(token, password)
-    tokenCache.set(username, {
-        hashedToken,
-        expires: Date.now() + CACHE_TTL
-    })
-}
 
 export async function apiCall(path: string, user: InternalUser) {
     const request = await axios.get(serverURL + '/api' + path, {
@@ -66,56 +15,6 @@ export async function apiCall(path: string, user: InternalUser) {
     }
 
     return request.data
-}
-
-export async function loginToAudiobookshelf(username: string, password: string): Promise<InternalUser | null> {
-    try {
-        const cachedToken = getCachedToken(username, password)
-        if (cachedToken) {
-            if (process.env.NODE_ENV === 'development') {
-                console.log(`[DEBUG] Using cached token for user: ${username}`)
-            }
-            return {
-                name: username,
-                apiKey: cachedToken
-            }
-        }
-
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`[DEBUG] Attempting ABS login to: ${serverURL}/login`)
-        }
-
-        const response = await axios.post(`${serverURL}/login`, {
-            username: username,
-            password: password
-        })
-
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`[DEBUG] ABS login response status: ${response.status}`)
-        }
-
-        if (response.status === 200 && response.data.user) {
-            const userData = response.data.user
-            if (process.env.NODE_ENV === 'development') {
-                console.log(`[DEBUG] ABS login successful for user: ${userData.username}`)
-            }
-            
-            setCachedToken(username, userData.accessToken, password)
-            
-            return {
-                name: userData.username,
-                apiKey: userData.accessToken
-            }
-        }
-        return null
-    } catch (error: any) {
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`[DEBUG] ABS login failed:`, error.response?.status, error.response?.data || error.message)
-        } else {
-            console.error('Login failed:', error.response?.status || error.message)
-        }
-        return null
-    }
 }
 
 export async function proxyToAudiobookshelf(req: Request, res: Response) {
