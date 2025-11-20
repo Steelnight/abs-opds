@@ -1,7 +1,7 @@
-import { InternalUser } from '../types/internal'
+import { InternalUser } from '../types/internal.js'
 import type { Request, Response } from 'express'
 import axios from 'axios'
-import { serverURL, useProxy } from '../index'
+import { serverURL, useProxy } from '../index.js'
 import crypto from 'crypto'
 
 interface CachedToken {
