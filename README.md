@@ -49,7 +49,7 @@ Fork of https://github.com/Vito0912/abs-opds - thank you for all your work!
 
 ## About
 
-This repository contains a modified version https://github.com/Vito0912/abs-opds intended to integrate OPDS directly into ABS and to work with koreader (by disabling the login). This repo is intented to experiment with Google Jules.
+This repository contains a modified version https://github.com/Vito0912/abs-opds intended to integrate OPDS directly into ABS and to work with koreader on a old Kindle Paperwhite (by disabling the login). This repo is intented to experiment with Google Jules.
 
 ## Docker Compose
 
