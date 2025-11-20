@@ -45,20 +45,11 @@ The following environment variables can be set in a `.env` file or directly in y
 | ABS_NOAUTH_PASSWORD | The password to use for automatic login when `OPDS_NO_AUTH` is true.       |                       | Yes (if no-auth) |
 
 ## Attribution
-
-Thanks to [Martin Joneš](https://github.com/jondycz) for helping with some features and adding this to TrueNas.
-
-> [!IMPORTANT]
-> This project began as a proof of concept (PoC) created several months before the development of [OPDS-ABS](https://github.com/petr-prikryl/OPDS-ABS). They had packed their OPDS server with docker which I found so nice, that I decided to share my old PoC as well with that method.
->
-> - Original commit reference: [Commit 94b74b2a0f44cd210ca909109f52e52480468712](https://github.com/Vito0912/audiobookshelf/commit/94b74b2a0f44cd210ca909109f52e52480468712)
-> - I modified my stale PR after seeing the [OPDS-ABS](https://github.com/petr-prikryl/OPDS-ABS) project and packaged this progress for sharing so that work does not need to be done twice. I also took inspiration from their auth system and adding a third value for Basic Auth once it is implemented.
-> - On the long run I want to make a PR to ABS to add this directly again
+Fork of https://github.com/Vito0912/abs-opds - thank you for all your work!
 
 ## About
 
-This repository contains a modified version of my earlier work intended to integrate OPDS directly into ABS by adding it as an extra server component. Please note that while ABS is undergoing backend changes, further modifications will be required to fully integrate OPDS functionality.
-I plan to add these once the refactoring is finished. This can take months or years.
+This repository contains a modified version https://github.com/Vito0912/abs-opds intended to integrate OPDS directly into ABS and to work with koreader (by disabling the login). This repo is intented to experiment with Google Jules.
 
 ## Docker Compose
 
