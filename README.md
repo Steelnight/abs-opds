@@ -40,6 +40,9 @@ The following environment variables can be set in a `.env` file or directly in y
 | PORT             | The port the OPDS server will run on.                                      | 3010                  | No       |
 | OPDS_PAGE_SIZE   | Number of items on each page in the OPDS feed.                             | 20                    | No       |
 | OPDS_USERS       | Comma-separated list of users in the format `username:ABS_API_TOKEN:password`. This does NOT need to be your ABS username and password, but values you can freely set to log in with your reader. |                       | No       |
+| OPDS_NO_AUTH     | Set to `true` to disable Basic Auth and automatically log in as a specific user. | false                 | No       |
+| ABS_NOAUTH_USERNAME | The username to use for automatic login when `OPDS_NO_AUTH` is true.       |                       | Yes (if no-auth) |
+| ABS_NOAUTH_PASSWORD | The password to use for automatic login when `OPDS_NO_AUTH` is true.       |                       | Yes (if no-auth) |
 
 ## Attribution
 

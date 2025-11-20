@@ -14,3 +14,6 @@ services:
       - OPDS_PAGE_SIZE=20
       - SHOW_AUDIOBOOKS=true
       - SHOW_CHAR_CARDS=true
+      # - OPDS_NO_AUTH=true
+      # - ABS_NOAUTH_USERNAME=myuser
+      # - ABS_NOAUTH_PASSWORD=mypassword
