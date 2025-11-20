@@ -22,6 +22,9 @@ export const serverURL = process.env.ABS_URL || 'http://localhost:3000'
 const internalUsersString = process.env.OPDS_USERS || ''
 const showAudioBooks = process.env.SHOW_AUDIOBOOKS === 'true' || false
 const showCharCards = process.env.SHOW_CHAR_CARDS === 'true' || false
+const noAuthMode = process.env.OPDS_NO_AUTH === 'true' || false
+const noAuthUsername = process.env.ABS_NOAUTH_USERNAME || ''
+const noAuthPassword = process.env.ABS_NOAUTH_PASSWORD || ''
 await loadLocalizations()
 
 const internalUsers: InternalUser[] = internalUsersString.split(',').map((user) => {
@@ -37,6 +40,33 @@ const libraryItemsCache: Record<string, CacheEntry> = {}
 const CACHE_EXPIRATION = 60 * 60 * 1000 // 1 hour in milliseconds
 
 async function authenticateUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // New logic
+    if (noAuthMode) {
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`[DEBUG] Auth skipped due to OPDS_NO_AUTH. Attempting auto-login for ${noAuthUsername}`)
+        }
+
+        if (!noAuthUsername || !noAuthPassword) {
+            console.error('OPDS_NO_AUTH is enabled but ABS_NOAUTH_USERNAME or ABS_NOAUTH_PASSWORD is missing.')
+            res.status(500).send('Server configuration error')
+            return
+        }
+
+        const user = await loginToAudiobookshelf(noAuthUsername, noAuthPassword)
+        if (user) {
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`[DEBUG] Auto-login successful for user: ${noAuthUsername}`)
+            }
+            req.user = user
+            next()
+            return
+        } else {
+            console.error(`Auto-login failed for user: ${noAuthUsername}`)
+            res.status(401).send('Authentication failed for default user')
+            return
+        }
+    }
+
     const authHeader = req.headers.authorization
 
     if (process.env.NODE_ENV === 'development') {
