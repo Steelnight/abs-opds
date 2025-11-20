@@ -1,10 +1,10 @@
 import * as builder from 'xmlbuilder';
 import {XMLNode} from "xmlbuilder";
-import {Library, LibraryItem} from "../types/library";
-import {serverURL, useProxy} from "../index";
-import {InternalUser} from "../types/internal";
+import {Library, LibraryItem} from "../types/library.js";
+import {serverURL, useProxy} from "../index.js";
+import {InternalUser} from "../types/internal.js";
 import { Request } from 'express';
-import localize from '../i18n/i18n';
+import localize from '../i18n/i18n.js';
 
 export function buildOPDSXMLSkeleton(id: string, title: string, entriesXML: XMLNode[], library?: Library, user?: InternalUser, request?: Request, endOfPage?: boolean, totalItems?: number): string {
 
@@ -122,7 +122,7 @@ export function buildOPDSXMLSkeleton(id: string, title: string, entriesXML: XMLN
     return xml.end({ pretty: true });
 }
 
-export function buildLibraryEntries(libraries: Library[], user: InternalUser): XMLNode[] {
+export function buildLibraryEntries(libraries: Library[]): XMLNode[] {
     // Create entries without XML declaration by using builder options
     return libraries.flatMap(library => [
         builder.create('entry', { headless: true })
@@ -133,7 +133,7 @@ export function buildLibraryEntries(libraries: Library[], user: InternalUser): X
     ]);
 }
 
-export function buildCategoryEntries(libraryId: string, user: InternalUser, lang?: string): XMLNode[] {
+export function buildCategoryEntries(libraryId: string, lang?: string): XMLNode[] {
     return [
         builder.create('entry', { headless: true })
             .ele('id', libraryId).up()
@@ -160,7 +160,7 @@ export function buildCategoryEntries(libraryId: string, user: InternalUser, lang
 
 }
 
-export function buildCardEntries(items: string[], type: string, user: InternalUser, libraryId: string): XMLNode[] {
+export function buildCardEntries(items: string[], type: string, libraryId: string): XMLNode[] {
     return items.map(item => {
         return builder.create('entry', { headless: true })
             .ele('id', item.toLowerCase().replace(' ', '-')).up()
@@ -170,7 +170,7 @@ export function buildCardEntries(items: string[], type: string, user: InternalUs
     });
 }
 
-export function buildCustomCardEntries(items: {item: string, link: string}[], type: string, user: InternalUser, libraryId: string): XMLNode[] {
+export function buildCustomCardEntries(items: {item: string, link: string}[]): XMLNode[] {
     return items.map(item => {
         return builder.create('entry', { headless: true })
             .ele('id', item.item.toLowerCase().replace(' ', '-')).up()
@@ -219,7 +219,7 @@ export function buildItemEntries(libraryItems: LibraryItem[], user: InternalUser
     });
 }
 
-export function buildSearchDefinition(id: string, user: InternalUser) {
+export function buildSearchDefinition(id: string) {
     return builder.create('OpenSearchDescription', { version: '1.0', encoding: 'UTF-8' })
         .att('xmlns', 'http://a9.com/-/spec/opensearch/1.1/')
         .att('xmlns:atom', 'http://www.w3.org/2005/Atom')

@@ -1,5 +1,5 @@
 import express, { Request, Response, NextFunction } from 'express'
-import { InternalUser } from './types/internal'
+import { InternalUser } from './types/internal.js'
 import 'dotenv/config'
 import {
     buildCardEntries,
@@ -9,11 +9,11 @@ import {
     buildLibraryEntries,
     buildOPDSXMLSkeleton,
     buildSearchDefinition
-} from './helpers/abs'
-import { apiCall, loginToAudiobookshelf, proxyToAudiobookshelf } from './helpers/api'
-import { Library, LibraryItem } from './types/library'
+} from './helpers/abs.js'
+import { apiCall, loginToAudiobookshelf, proxyToAudiobookshelf } from './helpers/api.js'
+import { Library, LibraryItem } from './types/library.js'
 import { hash } from 'crypto'
-import { loadLocalizations } from './i18n/i18n'
+import { loadLocalizations } from './i18n/i18n.js'
 
 const app = express()
 const port = process.env.PORT || 3010
@@ -201,7 +201,7 @@ app.get('/opds', authenticateUser, async (req: Request, res: Response) => {
         buildOPDSXMLSkeleton(
             hash('sha1', user.name),
             `${user.name}'s Libraries`,
-            buildLibraryEntries(parsedLibaries, user)
+            buildLibraryEntries(parsedLibaries)
         )
     )
 })
@@ -215,7 +215,7 @@ app.get('/opds/libraries/:libraryId', authenticateUser, async (req: Request, res
             buildOPDSXMLSkeleton(
                 `urn:uuid:${req.params.libraryId}`,
                 `Categories`,
-                buildCategoryEntries(req.params.libraryId, user, lang)
+                buildCategoryEntries(req.params.libraryId, lang)
             )
         )
         return
@@ -316,9 +316,9 @@ app.get('/opds/libraries/:libraryId', authenticateUser, async (req: Request, res
 })
 
 app.get('/opds/libraries/:libraryId/search-definition', authenticateUser, async (req: Request, res: Response) => {
-    const user = req.user!
+    // const user = req.user!
 
-    res.type('application/xml').send(buildSearchDefinition(req.params.libraryId, user))
+    res.type('application/xml').send(buildSearchDefinition(req.params.libraryId))
 })
 
 app.get('/opds/libraries/:libraryId/:type', authenticateUser, async (req: Request, res: Response) => {
@@ -383,14 +383,14 @@ app.get('/opds/libraries/:libraryId/:type', authenticateUser, async (req: Reques
     //Group by normalized first letter, discard empty entries
     const countByStartLetter: Record<string, number> = Object.fromEntries(
         Object.entries(
-            Object.groupBy(distinctTypeArray, (item) => {
+            Object.groupBy(distinctTypeArray, (item: string) => {
                 const startLetter = item.charAt(0).toUpperCase()
                 const normalizedStartLetter = startLetter.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
                 const isAtoZ = 'A' <= normalizedStartLetter && normalizedStartLetter <= 'Z'
                 return isAtoZ ? normalizedStartLetter : ''
             })
         )
-            .map(([letter, objects]) => [letter, objects?.length])
+            .map(([letter, objects]) => [letter, objects ? objects.length : 0])
             .filter(([l, c]) => Boolean(l) && Boolean(c))
     )
 
@@ -407,7 +407,7 @@ app.get('/opds/libraries/:libraryId/:type', authenticateUser, async (req: Reques
             buildOPDSXMLSkeleton(
                 `urn:uuid:${req.params.libraryId}`,
                 `${library.name}`,
-                buildCustomCardEntries(itemCards, req.params.type, user, req.params.libraryId)
+                buildCustomCardEntries(itemCards)
             )
         )
         return
@@ -424,7 +424,7 @@ app.get('/opds/libraries/:libraryId/:type', authenticateUser, async (req: Reques
         buildOPDSXMLSkeleton(
             `urn:uuid:${req.params.libraryId}`,
             `${library.name}`,
-            buildCardEntries(distinctTypeArray, req.params.type, user, req.params.libraryId)
+            buildCardEntries(distinctTypeArray, req.params.type, req.params.libraryId)
         )
     )
 })
