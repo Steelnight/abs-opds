@@ -11,14 +11,14 @@ use anyhow::Result;
 #[path = "service_tests.rs"]
 mod service_tests;
 
-pub struct LibraryService {
-    pub client: Arc<dyn AbsClient>,
+pub struct LibraryService<C: AbsClient + ?Sized> {
+    pub client: Arc<C>,
     pub config: AppConfig,
     pub i18n: I18n,
 }
 
-impl LibraryService {
-    pub fn new(client: Arc<dyn AbsClient>, config: AppConfig, i18n: I18n) -> Self {
+impl<C: AbsClient + ?Sized> LibraryService<C> {
+    pub fn new(client: Arc<C>, config: AppConfig, i18n: I18n) -> Self {
         Self { client, config, i18n }
     }
 

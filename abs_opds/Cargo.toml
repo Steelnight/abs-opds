@@ -18,14 +18,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 futures-util = "0.3"
 regex = "1"
-thiserror = "1"
 unicode-normalization = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 # Force same http version
 http = "1"
 anyhow = "1.0.100"
 envy = "0.4.2"
-async-trait = "0.1.89"
 
 [dev-dependencies]
 mockall = "0.13.1"

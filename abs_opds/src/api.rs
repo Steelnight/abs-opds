@@ -3,14 +3,12 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use async_trait::async_trait;
 
-#[async_trait]
 pub trait AbsClient: Send + Sync {
     async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
-    async fn get_libraries(&self, user: &InternalUser) -> Result<Vec<AbsLibrary>, reqwest::Error>;
-    async fn get_library(&self, user: &InternalUser, library_id: &str) -> Result<AbsLibrary, reqwest::Error>;
-    async fn get_items(&self, user: &InternalUser, library_id: &str) -> Result<AbsItemsResponse, reqwest::Error>;
+    async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>>;
+    async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary>;
+    async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse>;
 }
 
 #[derive(Clone)]
@@ -32,7 +30,6 @@ impl ApiClient {
     }
 }
 
-#[async_trait]
 impl AbsClient for ApiClient {
     async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser> {
         // Check cache
@@ -76,7 +73,7 @@ impl AbsClient for ApiClient {
         }
     }
 
-    async fn get_libraries(&self, user: &InternalUser) -> Result<Vec<AbsLibrary>, reqwest::Error> {
+    async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>> {
         let url = format!("{}/api/libraries", self.base_url);
         let response = self
             .client
@@ -89,7 +86,7 @@ impl AbsClient for ApiClient {
         Ok(data.libraries)
     }
 
-    async fn get_library(&self, user: &InternalUser, library_id: &str) -> Result<AbsLibrary, reqwest::Error> {
+    async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary> {
          let url = format!("{}/api/libraries/{}", self.base_url, library_id);
         let response = self
             .client
@@ -98,10 +95,10 @@ impl AbsClient for ApiClient {
             .send()
             .await?;
 
-        response.json::<AbsLibrary>().await
+        Ok(response.json::<AbsLibrary>().await?)
     }
 
-    async fn get_items(&self, user: &InternalUser, library_id: &str) -> Result<AbsItemsResponse, reqwest::Error> {
+    async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse> {
         let url = format!("{}/api/libraries/{}/items", self.base_url, library_id);
         let response = self
             .client
@@ -110,6 +107,6 @@ impl AbsClient for ApiClient {
             .send()
             .await?;
 
-        response.json::<AbsItemsResponse>().await
+        Ok(response.json::<AbsItemsResponse>().await?)
     }
 }
