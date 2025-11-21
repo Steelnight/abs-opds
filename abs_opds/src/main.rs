@@ -11,19 +11,22 @@ mod auth;
 mod handlers;
 mod i18n;
 mod models;
+mod service;
 mod xml;
 #[cfg(test)]
 mod tests;
 
-use api::ApiClient;
+use api::{ApiClient, AbsClient};
 use i18n::I18n;
 use models::AppConfig;
+use service::LibraryService;
 
 pub struct AppState {
     pub config: AppConfig,
-    pub api_client: ApiClient,
+    pub api_client: Arc<dyn AbsClient>,
     pub i18n: I18n,
     pub api_client_raw: reqwest::Client, // For proxy
+    pub service: LibraryService,
 }
 
 #[tokio::main]
@@ -39,13 +42,21 @@ async fn main() {
         .init();
 
     let mut config = envy::from_env::<AppConfig>().expect("Failed to load configuration");
-    config.parse_users();
+    if let Err(e) = config.parse_users() {
+        tracing::error!("Configuration error: {}", e);
+        std::process::exit(1);
+    }
+    if let Err(e) = config.validate() {
+        tracing::error!("Configuration validation failed: {}", e);
+        std::process::exit(1);
+    }
 
-    let languages_dir = std::env::current_dir().unwrap().join("languages");
+    let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
     let i18n = I18n::new(&languages_dir);
 
-    let api_client = ApiClient::new(config.abs_url.clone());
+    let api_client = Arc::new(ApiClient::new(config.abs_url.clone()));
     let api_client_raw = reqwest::Client::new();
+    let service = LibraryService::new(api_client.clone(), config.clone(), i18n.clone());
 
     let port = config.port;
     let abs_url = config.abs_url.clone();
@@ -55,6 +66,7 @@ async fn main() {
         api_client,
         i18n,
         api_client_raw,
+        service,
     });
 
     let app = Router::new()

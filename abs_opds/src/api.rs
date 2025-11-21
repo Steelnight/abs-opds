@@ -3,6 +3,15 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait AbsClient: Send + Sync {
+    async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
+    async fn get_libraries(&self, user: &InternalUser) -> Result<Vec<AbsLibrary>, reqwest::Error>;
+    async fn get_library(&self, user: &InternalUser, library_id: &str) -> Result<AbsLibrary, reqwest::Error>;
+    async fn get_items(&self, user: &InternalUser, library_id: &str) -> Result<AbsItemsResponse, reqwest::Error>;
+}
 
 #[derive(Clone)]
 pub struct ApiClient {
@@ -21,8 +30,11 @@ impl ApiClient {
             cache_ttl: Duration::from_secs(600), // 10 minutes
         }
     }
+}
 
-    pub async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser> {
+#[async_trait]
+impl AbsClient for ApiClient {
+    async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser> {
         // Check cache
         {
             let cache = self.token_cache.read().unwrap();
@@ -64,7 +76,7 @@ impl ApiClient {
         }
     }
 
-    pub async fn get_libraries(&self, user: &InternalUser) -> Result<Vec<AbsLibrary>, reqwest::Error> {
+    async fn get_libraries(&self, user: &InternalUser) -> Result<Vec<AbsLibrary>, reqwest::Error> {
         let url = format!("{}/api/libraries", self.base_url);
         let response = self
             .client
@@ -77,7 +89,7 @@ impl ApiClient {
         Ok(data.libraries)
     }
 
-    pub async fn get_library(&self, user: &InternalUser, library_id: &str) -> Result<AbsLibrary, reqwest::Error> {
+    async fn get_library(&self, user: &InternalUser, library_id: &str) -> Result<AbsLibrary, reqwest::Error> {
          let url = format!("{}/api/libraries/{}", self.base_url, library_id);
         let response = self
             .client
@@ -89,7 +101,7 @@ impl ApiClient {
         response.json::<AbsLibrary>().await
     }
 
-    pub async fn get_items(&self, user: &InternalUser, library_id: &str) -> Result<AbsItemsResponse, reqwest::Error> {
+    async fn get_items(&self, user: &InternalUser, library_id: &str) -> Result<AbsItemsResponse, reqwest::Error> {
         let url = format!("{}/api/libraries/{}/items", self.base_url, library_id);
         let response = self
             .client

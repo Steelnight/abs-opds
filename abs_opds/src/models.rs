@@ -97,20 +97,20 @@ pub struct AbsItemsResponse {
     pub results: Vec<AbsItemResult>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AbsItemResult {
     pub id: String,
     pub media: AbsMedia,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AbsMedia {
     pub metadata: AbsMetadata,
     #[serde(rename = "ebookFormat")]
     pub ebook_format: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AbsMetadata {
     pub title: Option<String>,
     pub subtitle: Option<String>,
@@ -171,28 +171,39 @@ pub struct AppConfig {
 
 impl AppConfig {
     // Method to parse internal users after deserialization
-    pub fn parse_users(&mut self) {
-        self.internal_users = self.opds_users
-            .split(',')
-            .filter(|s| !s.is_empty())
-            .map(|user| {
-                let parts: Vec<&str> = user.split(':').collect();
-                if parts.len() >= 3 {
-                     InternalUser {
-                        name: parts[0].to_string(),
-                        api_key: parts[1].to_string(),
-                        password: Some(parts[2].to_string()),
-                    }
-                } else {
-                    InternalUser {
-                        name: "Invalid".to_string(),
-                        api_key: "".to_string(),
-                        password: None,
-                    }
-                }
-            })
-            .filter(|u| !u.api_key.is_empty())
-            .collect();
+    pub fn parse_users(&mut self) -> anyhow::Result<()> {
+        let mut users = Vec::new();
+        for user_str in self.opds_users.split(',') {
+            if user_str.trim().is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = user_str.split(':').collect();
+            if parts.len() < 3 {
+                return Err(anyhow::anyhow!(
+                    "Invalid user configuration: '{}'. Expected format: username:api_key:password",
+                    user_str
+                ));
+            }
+            users.push(InternalUser {
+                name: parts[0].to_string(),
+                api_key: parts[1].to_string(),
+                password: Some(parts[2].to_string()),
+            });
+        }
+        self.internal_users = users;
+        Ok(())
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.abs_url.trim().is_empty() {
+            return Err(anyhow::anyhow!("ABS_URL cannot be empty"));
+        }
+        if !self.opds_no_auth && self.internal_users.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No users configured and OPDS_NO_AUTH is false. Please set OPDS_USERS or enable OPDS_NO_AUTH."
+            ));
+        }
+        Ok(())
     }
 }
 
