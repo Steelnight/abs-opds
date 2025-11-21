@@ -6,10 +6,14 @@ use std::sync::{Arc, OnceLock};
 use std::collections::{HashSet, HashMap};
 use unicode_normalization::UnicodeNormalization;
 use anyhow::Result;
+use rayon::prelude::*;
 
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
+#[cfg(test)]
+#[path = "performance_tests.rs"]
+mod performance_tests;
 
 pub struct LibraryService<C: AbsClient + ?Sized> {
     pub client: Arc<C>,
@@ -48,7 +52,7 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
     ) -> Result<(Vec<LibraryItem>, usize)> {
         let items_data = self.client.get_items(user, library_id).await?;
 
-        let mut parsed_items: Vec<LibraryItem> = items_data.results.into_iter().filter_map(|item| {
+        let mut parsed_items: Vec<LibraryItem> = items_data.results.into_par_iter().filter_map(|item| {
              let format = item.media.ebook_format;
              if format.is_some() || self.config.show_audiobooks {
                  Some(LibraryItem {
@@ -91,7 +95,7 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                     .unwrap_or_else(|_| regex::Regex::new("").unwrap())
              });
 
-             parsed_items.retain(|item| {
+             parsed_items = parsed_items.into_par_iter().filter(|item| {
                  if type_query == Some(&ItemType::Authors) {
                      if let Some(re) = &name_query_re {
                          return item.authors.iter().any(|a| re.is_match(&a.name));
@@ -114,17 +118,17 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                       }
                  }
                  true
-             });
+             }).collect();
          }
 
          if let Some(author) = &query.author {
              let re = regex::RegexBuilder::new(&regex::escape(author)).case_insensitive(true).build()?;
-             parsed_items.retain(|item| item.authors.iter().any(|a| re.is_match(&a.name)));
+             parsed_items = parsed_items.into_par_iter().filter(|item| item.authors.iter().any(|a| re.is_match(&a.name))).collect();
          }
 
          if let Some(title) = &query.title {
              let re = regex::RegexBuilder::new(&regex::escape(title)).case_insensitive(true).build()?;
-             parsed_items.retain(|item| item.title.as_deref().map_or(false, |t| re.is_match(t)) || item.subtitle.as_deref().map_or(false, |t| re.is_match(t)));
+             parsed_items = parsed_items.into_par_iter().filter(|item| item.title.as_deref().map_or(false, |t| re.is_match(t)) || item.subtitle.as_deref().map_or(false, |t| re.is_match(t))).collect();
          }
 
          let total_items = parsed_items.len();
@@ -156,36 +160,42 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
              icon: lib_data.icon,
          };
 
-         let mut distinct_type = HashSet::new();
-
-         for item in items_data.results {
-              match type_ {
-                  "authors" => {
-                      if let Some(names) = item.media.metadata.author_name {
-                          for name in names.split(',') { distinct_type.insert(name.trim().to_string()); }
-                      }
-                  },
-                  "narrators" => {
-                       if let Some(names) = item.media.metadata.narrator_name {
-                          for name in names.split(',') { distinct_type.insert(name.trim().to_string()); }
-                      }
-                  },
-                  "genres" => {
-                      if let Some(genres) = item.media.metadata.genres {
-                          for g in genres { distinct_type.insert(g.trim().to_string()); }
-                      }
-                      if let Some(tags) = item.media.metadata.tags {
-                          for t in tags { distinct_type.insert(t.trim().to_string()); }
-                      }
-                  },
-                  "series" => {
-                       if let Some(series) = item.media.metadata.series_name {
-                          for s in series.split(',') { distinct_type.insert(s.trim().to_string()); }
-                      }
-                  },
-                  _ => {}
-              }
-         }
+         let distinct_type: HashSet<String> = items_data.results.into_par_iter()
+             .fold(HashSet::new, |mut acc, item| {
+                 match type_ {
+                     "authors" => {
+                         if let Some(names) = item.media.metadata.author_name {
+                             for name in names.split(',') { acc.insert(name.trim().to_string()); }
+                         }
+                     },
+                     "narrators" => {
+                          if let Some(names) = item.media.metadata.narrator_name {
+                             for name in names.split(',') { acc.insert(name.trim().to_string()); }
+                         }
+                     },
+                     "genres" => {
+                         if let Some(genres) = item.media.metadata.genres {
+                             for g in genres { acc.insert(g.trim().to_string()); }
+                         }
+                         if let Some(tags) = item.media.metadata.tags {
+                             for t in tags { acc.insert(t.trim().to_string()); }
+                         }
+                     },
+                     "series" => {
+                          if let Some(series) = item.media.metadata.series_name {
+                             for s in series.split(',') { acc.insert(s.trim().to_string()); }
+                         }
+                     },
+                     _ => {}
+                 }
+                 acc
+             })
+             .reduce(HashSet::new, |mut a, b| {
+                 for item in b {
+                     a.insert(item);
+                 }
+                 a
+             });
 
          let mut distinct_type_array: Vec<String> = distinct_type.into_iter().collect();
          distinct_type_array.sort();
