@@ -1,5 +1,4 @@
 use axum::{
-    async_trait,
     extract::{FromRequestParts, FromRef},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
@@ -12,7 +11,6 @@ use crate::{models::InternalUser, AppState, api::AbsClient};
 
 pub struct AuthUser(pub InternalUser);
 
-#[async_trait]
 impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,
