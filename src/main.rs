@@ -71,10 +71,10 @@ async fn main() {
 
     let app = Router::new()
         .route("/opds", get(handlers::get_opds_root))
-        .route("/opds/libraries/:library_id", get(handlers::get_library))
-        .route("/opds/libraries/:library_id/search-definition", get(handlers::search_definition))
-        .route("/opds/libraries/:library_id/:type", get(handlers::get_category))
-        .route("/opds/proxy/*any", any(handlers::proxy_handler))
+        .route("/opds/libraries/{library_id}", get(handlers::get_library))
+        .route("/opds/libraries/{library_id}/search-definition", get(handlers::search_definition))
+        .route("/opds/libraries/{library_id}/{type}", get(handlers::get_category))
+        .route("/opds/proxy/{*any}", any(handlers::proxy_handler))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

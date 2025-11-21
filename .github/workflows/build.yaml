@@ -45,7 +45,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/vito0912/abs-opds
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             # Always
             type=raw,value=dev
