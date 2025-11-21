@@ -47,6 +47,17 @@ The following environment variables can be set in a `.env` file or directly in y
 ## Attribution
 Fork of https://github.com/Vito0912/abs-opds - thank you for all your work!
 
+## Rust Rewrite
+
+This project has been rewritten in **Rust** to improve performance, stability, and ease of deployment compared to the original TypeScript/Node.js implementation.
+
+### Key Differences
+
+*   **Performance & Efficiency**: The Rust implementation consumes significantly less memory and CPU, making it ideal for running on low-power devices alongside Audiobookshelf.
+*   **Single Binary**: The application compiles to a single, self-contained binary with no runtime dependencies (like Node.js or `node_modules`), simplifying installation and updates.
+*   **Docker Optimization**: The Docker image is built on Alpine Linux, resulting in a much smaller image size and a reduced attack surface.
+*   **Safety**: Rust's memory safety guarantees help prevent common classes of bugs and crashes.
+
 ## About
 
 This repository contains a modified version https://github.com/Vito0912/abs-opds intended to integrate OPDS directly into ABS and to work with koreader on a old Kindle Paperwhite (by disabling the login). This repo is intented to experiment with Google Jules.
