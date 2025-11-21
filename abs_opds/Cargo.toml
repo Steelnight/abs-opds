@@ -23,3 +23,5 @@ unicode-normalization = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 # Force same http version
 http = "1"
+anyhow = "1.0.100"
+envy = "0.4.2"

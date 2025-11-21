@@ -2,18 +2,20 @@
 mod tests {
     use crate::models::{Library, LibraryItem, Author, InternalUser};
     use crate::xml::OpdsBuilder;
+    use quick_xml::Writer;
+    use std::io::Cursor;
 
     #[test]
     fn test_build_opds_skeleton() {
         let xml = OpdsBuilder::build_opds_skeleton(
             "test_id",
             "Test Title",
-            vec![],
+            |_| Ok(()),
             None,
             None,
             None,
             "/opds"
-        );
+        ).expect("Failed to build XML");
 
         assert!(xml.contains("<id>test_id</id>"));
         assert!(xml.contains("<title>Test Title</title>"));
@@ -28,7 +30,10 @@ mod tests {
             icon: None,
         };
 
-        let entry = OpdsBuilder::build_library_entry(&lib);
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+        OpdsBuilder::build_library_entry(&mut writer, &lib).expect("Failed to build entry");
+
+        let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("<id>lib1</id>"));
         assert!(entry.contains("<title>My Library</title>"));
         assert!(entry.contains("/opds/libraries/lib1?categories=true"));
@@ -59,8 +64,10 @@ mod tests {
             password: None,
         };
 
-        let entry = OpdsBuilder::build_item_entry(&item, &user, "http://localhost:3000");
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000").expect("Failed to build entry");
 
+        let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("<id>urn:uuid:item1</id>"));
         assert!(entry.contains("<title>Book Title</title>"));
         assert!(entry.contains("<name>Author Name</name>"));

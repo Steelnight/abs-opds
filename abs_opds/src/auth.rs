@@ -21,17 +21,17 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
         state: &Arc<AppState>,
     ) -> Result<Self, Self::Rejection> {
         // 1. Check OPDS_NO_AUTH
-        if state.config.no_auth_mode {
-            if !state.config.no_auth_username.is_empty() && !state.config.no_auth_password.is_empty() {
+        if state.config.opds_no_auth {
+            if !state.config.abs_noauth_username.is_empty() && !state.config.abs_noauth_password.is_empty() {
                 match state
                     .api_client
-                    .login(&state.config.no_auth_username, &state.config.no_auth_password)
+                    .login(&state.config.abs_noauth_username, &state.config.abs_noauth_password)
                     .await
                 {
-                    Some(user) => return Ok(AuthUser(user)),
-                    None => {
-                        error!("Auto-login failed for default user");
-                        return Err((StatusCode::UNAUTHORIZED, "Authentication failed for default user")
+                    Ok(user) => return Ok(AuthUser(user)),
+                    Err(e) => {
+                        error!("Auto-login failed for default user: {}", e);
+                        return Err((StatusCode::UNAUTHORIZED, format!("Authentication failed: {}", e))
                             .into_response());
                     }
                 }
@@ -64,12 +64,12 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
                              // Check ABS login
                              debug!("Attempting ABS login for: {}", username);
                              match state.api_client.login(username, password).await {
-                                 Some(user) => {
+                                 Ok(user) => {
                                      debug!("ABS user authenticated: {}", username);
                                      return Ok(AuthUser(user));
                                  }
-                                 None => {
-                                     debug!("Authentication failed for user: {}", username);
+                                 Err(e) => {
+                                     debug!("Authentication failed for user {}: {}", username, e);
                                  }
                              }
                          }

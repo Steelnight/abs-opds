@@ -22,13 +22,13 @@ impl ApiClient {
         }
     }
 
-    pub async fn login(&self, username: &str, password: &str) -> Option<InternalUser> {
+    pub async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser> {
         // Check cache
         {
             let cache = self.token_cache.read().unwrap();
             if let Some((token, expires)) = cache.get(username) {
                 if Instant::now() < *expires {
-                    return Some(InternalUser {
+                    return Ok(InternalUser {
                         name: username.to_string(),
                         api_key: token.clone(),
                         password: None,
@@ -43,25 +43,25 @@ impl ApiClient {
         match self.client.post(&url).json(&body).send().await {
             Ok(response) => {
                 if response.status().is_success() {
-                    if let Ok(data) = response.json::<AbsLoginResponse>().await {
-                         {
-                            let mut cache = self.token_cache.write().unwrap();
-                            cache.insert(
-                                username.to_string(),
-                                (data.user.access_token.clone(), Instant::now() + self.cache_ttl),
-                            );
-                        }
-                        return Some(InternalUser {
-                            name: data.user.username,
-                            api_key: data.user.access_token,
-                            password: None,
-                        });
+                    let data = response.json::<AbsLoginResponse>().await?;
+                    {
+                        let mut cache = self.token_cache.write().unwrap();
+                        cache.insert(
+                            username.to_string(),
+                            (data.user.access_token.clone(), Instant::now() + self.cache_ttl),
+                        );
                     }
+                    return Ok(InternalUser {
+                        name: data.user.username,
+                        api_key: data.user.access_token,
+                        password: None,
+                    });
+                } else {
+                    return Err(anyhow::anyhow!("Invalid credentials or server error"));
                 }
             }
-            Err(e) => eprintln!("Login error: {}", e),
+            Err(e) => return Err(e.into()),
         }
-        None
     }
 
     pub async fn get_libraries(&self, user: &InternalUser) -> Result<Vec<AbsLibrary>, reqwest::Error> {
