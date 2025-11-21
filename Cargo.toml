@@ -1,0 +1,29 @@
+[package]
+name = "abs_opds"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+quick-xml = { version = "0.38", features = ["serialize"] }
+dotenvy = "0.15"
+base64 = "0.22"
+sha1_smol = "1.0"
+tower-http = { version = "0.6", features = ["trace", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util = "0.3"
+regex = "1"
+unicode-normalization = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+# Force same http version
+http = "1"
+anyhow = "1"
+envy = "0.4"
+
+[dev-dependencies]
+mockall = "0.13.1"
