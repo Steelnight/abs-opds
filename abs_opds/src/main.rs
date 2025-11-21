@@ -16,17 +16,17 @@ mod xml;
 #[cfg(test)]
 mod tests;
 
-use api::{ApiClient, AbsClient};
+use api::ApiClient;
 use i18n::I18n;
 use models::AppConfig;
 use service::LibraryService;
 
 pub struct AppState {
     pub config: AppConfig,
-    pub api_client: Arc<dyn AbsClient>,
+    pub api_client: Arc<ApiClient>,
     pub i18n: I18n,
     pub api_client_raw: reqwest::Client, // For proxy
-    pub service: LibraryService,
+    pub service: LibraryService<ApiClient>,
 }
 
 #[tokio::main]

@@ -1,6 +1,6 @@
 use axum::{
     async_trait,
-    extract::FromRequestParts,
+    extract::{FromRequestParts, FromRef},
     http::{request::Parts, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -8,18 +8,23 @@ use base64::{engine::general_purpose, Engine as _};
 use std::sync::Arc;
 use tracing::{debug, error};
 
-use crate::{models::InternalUser, AppState};
+use crate::{models::InternalUser, AppState, api::AbsClient};
 
 pub struct AuthUser(pub InternalUser);
 
 #[async_trait]
-impl FromRequestParts<Arc<AppState>> for AuthUser {
+impl<S> FromRequestParts<S> for AuthUser
+where
+    S: Send + Sync,
+    Arc<AppState>: FromRef<S>,
+{
     type Rejection = Response;
 
     async fn from_request_parts(
         parts: &mut Parts,
-        state: &Arc<AppState>,
+        state: &S,
     ) -> Result<Self, Self::Rejection> {
+        let state = Arc::<AppState>::from_ref(state);
         // 1. Check OPDS_NO_AUTH
         if state.config.opds_no_auth {
             if !state.config.abs_noauth_username.is_empty() && !state.config.abs_noauth_password.is_empty() {

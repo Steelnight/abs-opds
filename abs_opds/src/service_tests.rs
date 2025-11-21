@@ -5,19 +5,16 @@ mod tests {
     use crate::service::LibraryService;
     use crate::i18n::I18n;
     use crate::handlers::LibraryQuery;
-    use async_trait::async_trait;
     use mockall::mock;
     use std::sync::Arc;
-    use reqwest::Error;
 
     mock! {
         pub AbsClient {}
-        #[async_trait]
         impl AbsClient for AbsClient {
             async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
-            async fn get_libraries(&self, user: &InternalUser) -> Result<Vec<AbsLibrary>, Error>;
-            async fn get_library(&self, user: &InternalUser, library_id: &str) -> Result<AbsLibrary, Error>;
-            async fn get_items(&self, user: &InternalUser, library_id: &str) -> Result<AbsItemsResponse, Error>;
+            async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>>;
+            async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary>;
+            async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse>;
         }
     }
 
