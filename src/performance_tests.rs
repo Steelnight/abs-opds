@@ -75,13 +75,12 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_performance_100000_items() {
+    async fn run_performance_test(count: usize) {
         let mut mock_client = MockAbsClient::new();
         let user = mock_user();
 
-        let mut items = Vec::with_capacity(100_000);
-        for i in 0..100_000 {
+        let mut items = Vec::with_capacity(count);
+        for i in 0..count {
             items.push(create_item(
                 &format!("{}", i),
                 &format!("Book Title {}", i),
@@ -100,8 +99,9 @@ mod tests {
 
         let service = LibraryService::new(Arc::new(mock_client), mock_config(), mock_i18n());
 
+        let search_target = count / 2; // Search for something in the middle
         let query = LibraryQuery {
-            q: Some("Book Title 50000".to_string()), // Search for a specific item
+            q: Some(format!("Book Title {}", search_target)),
             page: 0,
             categories: None,
             author: None,
@@ -111,13 +111,13 @@ mod tests {
             start: None,
         };
 
-        println!("Starting performance test with 100,000 items...");
+        println!("Starting performance test with {} items...", count);
 
         // Measure get_filtered_items
         let start = Instant::now();
         let (filtered, total) = service.get_filtered_items(&user, "lib1", &query).await.unwrap();
         let duration = start.elapsed();
-        println!("get_filtered_items took: {:?}", duration);
+        println!("[{}] get_filtered_items took: {:?}", count, duration);
         assert!(total > 0);
         assert!(!filtered.is_empty());
 
@@ -127,7 +127,7 @@ mod tests {
              q: None, page: 0, categories: None, author: None, title: None, name: None, type_: None, start: None
         }).await.unwrap();
         let duration = start.elapsed();
-        println!("get_categories (authors) took: {:?}", duration);
+        println!("[{}] get_categories (authors) took: {:?}", count, duration);
 
         // Measure get_categories (Genres)
         let start = Instant::now();
@@ -135,6 +135,26 @@ mod tests {
              q: None, page: 0, categories: None, author: None, title: None, name: None, type_: None, start: None
         }).await.unwrap();
         let duration = start.elapsed();
-        println!("get_categories (genres) took: {:?}", duration);
+        println!("[{}] get_categories (genres) took: {:?}", count, duration);
+    }
+
+    #[tokio::test]
+    async fn test_performance_1000_items() {
+        run_performance_test(1_000).await;
+    }
+
+    #[tokio::test]
+    async fn test_performance_10000_items() {
+        run_performance_test(10_000).await;
+    }
+
+    #[tokio::test]
+    async fn test_performance_100000_items() {
+        run_performance_test(100_000).await;
+    }
+
+    #[tokio::test]
+    async fn test_performance_1000000_items() {
+        run_performance_test(1_000_000).await;
     }
 }

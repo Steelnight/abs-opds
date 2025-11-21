@@ -11,7 +11,7 @@ use axum::{
 use std::sync::Arc;
 use sha1_smol::Sha1;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 pub struct LibraryQuery {
     pub categories: Option<String>,
     #[serde(default)]
