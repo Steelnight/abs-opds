@@ -17,7 +17,7 @@ mod tests;
 
 use api::ApiClient;
 use i18n::I18n;
-use models::{AppConfig, InternalUser};
+use models::AppConfig;
 
 pub struct AppState {
     pub config: AppConfig,
@@ -38,64 +38,17 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let port = std::env::var("PORT")
-        .unwrap_or_else(|_| "3010".to_string())
-        .parse::<u16>()
-        .unwrap_or(3010);
-
-    let use_proxy = std::env::var("USE_PROXY").unwrap_or_else(|_| "false".to_string()) == "true";
-    let abs_url = std::env::var("ABS_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
-    let internal_users_str = std::env::var("OPDS_USERS").unwrap_or_default();
-    let show_audiobooks = std::env::var("SHOW_AUDIOBOOKS").unwrap_or_else(|_| "false".to_string()) == "true";
-    let show_char_cards = std::env::var("SHOW_CHAR_CARDS").unwrap_or_else(|_| "false".to_string()) == "true";
-    let no_auth_mode = std::env::var("OPDS_NO_AUTH").unwrap_or_else(|_| "false".to_string()) == "true";
-    let no_auth_username = std::env::var("ABS_NOAUTH_USERNAME").unwrap_or_default();
-    let no_auth_password = std::env::var("ABS_NOAUTH_PASSWORD").unwrap_or_default();
-    let opds_page_size = std::env::var("OPDS_PAGE_SIZE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
-
-    let internal_users: Vec<InternalUser> = internal_users_str
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(|user| {
-            let parts: Vec<&str> = user.split(':').collect();
-            if parts.len() >= 3 {
-                 InternalUser {
-                    name: parts[0].to_string(),
-                    api_key: parts[1].to_string(),
-                    password: Some(parts[2].to_string()),
-                }
-            } else {
-                InternalUser {
-                    name: "Invalid".to_string(),
-                    api_key: "".to_string(),
-                    password: None,
-                }
-            }
-        })
-        .filter(|u| !u.api_key.is_empty())
-        .collect();
+    let mut config = envy::from_env::<AppConfig>().expect("Failed to load configuration");
+    config.parse_users();
 
     let languages_dir = std::env::current_dir().unwrap().join("languages");
     let i18n = I18n::new(&languages_dir);
 
-    let config = AppConfig {
-        port,
-        use_proxy,
-        abs_url: abs_url.clone(),
-        internal_users,
-        show_audiobooks,
-        show_char_cards,
-        no_auth_mode,
-        no_auth_username,
-        no_auth_password,
-        opds_page_size,
-    };
-
-    let api_client = ApiClient::new(abs_url.clone());
+    let api_client = ApiClient::new(config.abs_url.clone());
     let api_client_raw = reqwest::Client::new();
+
+    let port = config.port;
+    let abs_url = config.abs_url.clone();
 
     let state = Arc::new(AppState {
         config,

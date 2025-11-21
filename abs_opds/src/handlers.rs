@@ -1,5 +1,5 @@
 use crate::auth::AuthUser;
-use crate::models::{Library, LibraryItem};
+use crate::models::{Library, LibraryItem, ItemType};
 use crate::xml::OpdsBuilder;
 use crate::AppState;
 use axum::{
@@ -9,7 +9,7 @@ use axum::{
     body::Body,
 };
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use sha1_smol::Sha1;
 use unicode_normalization::UnicodeNormalization;
 
@@ -23,7 +23,7 @@ pub struct LibraryQuery {
     pub title: Option<String>,
     pub name: Option<String>,
     #[serde(rename = "type")]
-    pub type_: Option<String>,
+    pub type_: Option<ItemType>,
     pub start: Option<String>,
 }
 
@@ -44,8 +44,6 @@ pub async fn get_opds_root(
                  return axum::response::Redirect::temporary(&format!("/opds/libraries/{}?categories=true", libraries[0].id)).into_response();
             }
 
-            let entries = crate::xml::OpdsBuilder::build_library_entry_list(&libraries);
-
             let mut hasher = Sha1::new();
             hasher.update(user.name.as_bytes());
             let user_hash = hasher.digest().to_string();
@@ -53,12 +51,12 @@ pub async fn get_opds_root(
             let xml = OpdsBuilder::build_opds_skeleton(
                 &user_hash,
                 &format!("{}'s Libraries", user.name),
-                entries,
+                OpdsBuilder::build_library_entry_list(&libraries),
                 None,
                 Some(&user),
                 None,
                 "/opds"
-            );
+            ).unwrap_or_else(|_| String::new());
 
              ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response()
         }
@@ -79,16 +77,15 @@ pub async fn get_library(
     let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
 
     if query.categories.is_some() {
-         let entries = OpdsBuilder::build_category_entries(&library_id, &state.i18n, lang);
          let xml = OpdsBuilder::build_opds_skeleton(
              &format!("urn:uuid:{}", library_id),
              "Categories",
-             entries,
+             OpdsBuilder::build_category_entries(&library_id, &state.i18n, lang),
              None,
              None,
              None,
              &format!("/opds/libraries/{}", library_id)
-         );
+         ).unwrap_or_else(|_| String::new());
          return ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response();
     }
 
@@ -118,7 +115,11 @@ pub async fn get_library(
                      published_year: item.media.metadata.published_year,
                      authors: item.media.metadata.author_name.map(|s| s.split(',').map(|n| crate::models::Author { name: n.trim().to_string() }).collect()).unwrap_or_default(),
                      narrators: item.media.metadata.narrator_name.map(|s| s.split(',').map(|n| crate::models::Author { name: n.trim().to_string() }).collect()).unwrap_or_default(),
-                     series: item.media.metadata.series_name.map(|s| s.split(',').map(|n| n.trim().replace(regex::Regex::new(r"#.*$").unwrap().as_str(), "").trim().to_string()).collect()).unwrap_or_default(),
+                     series: item.media.metadata.series_name.map(|s| {
+                         static SERIES_CLEANUP_RE: OnceLock<regex::Regex> = OnceLock::new();
+                         let re = SERIES_CLEANUP_RE.get_or_init(|| regex::Regex::new(r"#.*$").unwrap());
+                         s.split(',').map(|n| n.trim().replace(re.as_str(), "").trim().to_string()).collect()
+                     }).unwrap_or_default(),
                      format,
                  })
              } else {
@@ -133,7 +134,7 @@ pub async fn get_library(
                 .build()
                 .unwrap_or_else(|_| regex::Regex::new("").unwrap());
 
-             let type_query = query.type_.as_deref();
+             let type_query = query.type_.as_ref();
              let name_query_re = query.name.as_deref().map(|n| {
                   regex::RegexBuilder::new(&regex::escape(n))
                     .case_insensitive(true)
@@ -142,34 +143,25 @@ pub async fn get_library(
              });
 
              parsed_items.retain(|item| {
-                 if type_query == Some("authors") {
+                 if type_query == Some(&ItemType::Authors) {
                      if let Some(re) = &name_query_re {
                          return item.authors.iter().any(|a| re.is_match(&a.name));
                      }
-                 } else if type_query == Some("narrators") {
+                 } else if type_query == Some(&ItemType::Narrators) {
                       if let Some(re) = &name_query_re {
                          return item.narrators.iter().any(|a| re.is_match(&a.name));
                      }
-                 } else if type_query == Some("genres") {
+                 } else if type_query == Some(&ItemType::Genres) {
                      if let Some(re) = &name_query_re {
                          return item.genres.iter().any(|g| re.is_match(g)) || item.tags.iter().any(|t| re.is_match(t));
                      }
-                 } else if type_query == Some("series") {
+                 } else if type_query == Some(&ItemType::Series) {
                       if let Some(re) = &name_query_re {
                          return item.series.iter().any(|s| re.is_match(s));
                      }
                  } else {
                       if !search_term.is_empty() {
-                         return item.title.as_deref().map_or(false, |s| re.is_match(s)) ||
-                                item.subtitle.as_deref().map_or(false, |s| re.is_match(s)) ||
-                                item.description.as_deref().map_or(false, |s| re.is_match(s)) ||
-                                item.publisher.as_deref().map_or(false, |s| re.is_match(s)) ||
-                                item.isbn.as_deref().map_or(false, |s| re.is_match(s)) ||
-                                item.language.as_deref().map_or(false, |s| re.is_match(s)) ||
-                                item.published_year.as_deref().map_or(false, |s| re.is_match(s)) ||
-                                item.authors.iter().any(|a| re.is_match(&a.name)) ||
-                                item.genres.iter().any(|g| re.is_match(g)) ||
-                                item.tags.iter().any(|t| re.is_match(t));
+                         return item.matches(&re);
                       }
                  }
                  true
@@ -200,10 +192,6 @@ pub async fn get_library(
 
          let link_url = if state.config.use_proxy { "/opds/proxy" } else { &state.config.abs_url };
 
-         let entries: Vec<String> = paginated_items.iter().map(|item| {
-             OpdsBuilder::build_item_entry(item, &user, link_url)
-         }).collect();
-
          let mut url_base = format!("/opds/libraries/{}", library_id);
          let mut params = Vec::new();
          if let Some(q) = &query.q { params.push(format!("q={}", q)); }
@@ -220,12 +208,17 @@ pub async fn get_library(
          let xml = OpdsBuilder::build_opds_skeleton(
              &format!("urn:uuid:{}", library_id),
              &library.name,
-             entries,
+             |writer| {
+                 for item in paginated_items {
+                     OpdsBuilder::build_item_entry(writer, item, &user, link_url)?;
+                 }
+                 Ok(())
+             },
              Some(&library),
              Some(&user),
              Some((query.page, page_size, total_items, total_pages)),
              &url_base
-         );
+         ).unwrap_or_else(|_| String::new());
 
          ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response()
 
@@ -240,7 +233,8 @@ pub async fn get_category(
     Path((library_id, type_)): Path<(String, String)>,
     Query(query): Query<LibraryQuery>,
 ) -> Response {
-    if !["authors", "narrators", "genres", "series"].contains(&type_.as_str()) {
+    let item_type_str = type_.as_str();
+    if !["authors", "narrators", "genres", "series"].contains(&item_type_str) {
         return (StatusCode::BAD_REQUEST, "Invalid type").into_response();
     }
 
@@ -299,26 +293,26 @@ pub async fn get_category(
                   }
               }
 
-              let mut entries = Vec::new();
               let mut keys: Vec<String> = count_by_start.keys().cloned().collect();
               keys.sort();
 
-              for letter in keys {
-                  let count = count_by_start[&letter];
-                  let title = format!("{} ({})", letter, count);
-                  let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
-                  entries.push(OpdsBuilder::build_custom_card_entry(&title, &link));
-              }
-
-               let xml = OpdsBuilder::build_opds_skeleton(
+              let xml = OpdsBuilder::build_opds_skeleton(
                     &format!("urn:uuid:{}", library_id),
                     &library.name,
-                    entries,
+                    |writer| {
+                        for letter in keys {
+                            let count = count_by_start[&letter];
+                            let title = format!("{} ({})", letter, count);
+                            let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
+                            OpdsBuilder::build_custom_card_entry(writer, &title, &link)?;
+                        }
+                        Ok(())
+                    },
                     None,
                     None,
                     None,
                     &format!("/opds/libraries/{}/{}", library_id, type_)
-                );
+                ).unwrap_or_else(|_| String::new());
                  return ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response();
          }
 
@@ -330,19 +324,20 @@ pub async fn get_category(
              });
          }
 
-         let entries: Vec<String> = distinct_type_array.iter().map(|item| {
-             OpdsBuilder::build_card_entry(item, &type_, &library_id)
-         }).collect();
-
           let xml = OpdsBuilder::build_opds_skeleton(
              &format!("urn:uuid:{}", library_id),
              &library.name,
-             entries,
+             |writer| {
+                 for item in distinct_type_array {
+                     OpdsBuilder::build_card_entry(writer, &item, &type_, &library_id)?;
+                 }
+                 Ok(())
+             },
              None,
              None,
              None,
              &format!("/opds/libraries/{}/{}", library_id, type_)
-         );
+         ).unwrap_or_else(|_| String::new());
 
          ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response()
 

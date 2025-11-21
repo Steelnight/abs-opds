@@ -2,11 +2,11 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct I18n {
-    localizations: Arc<RwLock<HashMap<String, Value>>>,
+    localizations: Arc<HashMap<String, Value>>,
     fallback_language: String,
 }
 
@@ -29,13 +29,13 @@ impl I18n {
         }
 
         I18n {
-            localizations: Arc::new(RwLock::new(localizations)),
+            localizations: Arc::new(localizations),
             fallback_language: "en".to_string(),
         }
     }
 
     pub fn localize(&self, key: &str, lang: Option<&str>) -> String {
-        let localizations = self.localizations.read().unwrap();
+        let localizations = &self.localizations;
         let language_code = lang
             .and_then(|l| l.split('-').next())
             .map(|l| l.to_lowercase())
