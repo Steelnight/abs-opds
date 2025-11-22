@@ -80,19 +80,19 @@ impl std::fmt::Display for ItemType {
 
 // Structures for deserializing ABS API responses
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AbsLibrariesResponse {
     pub libraries: Vec<AbsLibrary>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AbsLibrary {
     pub id: String,
     pub name: String,
     pub icon: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct AbsItemsResponse {
     pub results: Vec<AbsItemResult>,
 }
