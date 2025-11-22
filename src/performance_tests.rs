@@ -8,9 +8,11 @@ mod tests {
     use mockall::mock;
     use std::sync::Arc;
     use std::time::Instant;
+    use async_trait::async_trait;
 
     mock! {
         pub AbsClient {}
+        #[async_trait]
         impl AbsClient for AbsClient {
             async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
             async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>>;

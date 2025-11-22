@@ -3,7 +3,9 @@ use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
+use async_trait::async_trait;
 
+#[async_trait]
 pub trait AbsClient: Send + Sync {
     async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
     async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>>;
@@ -30,6 +32,7 @@ impl ApiClient {
     }
 }
 
+#[async_trait]
 impl AbsClient for ApiClient {
     async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser> {
         // Check cache
