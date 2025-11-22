@@ -40,16 +40,22 @@ pub struct LibraryItem {
 
 impl LibraryItem {
     pub fn matches(&self, re: &regex::Regex) -> bool {
-        self.title.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.subtitle.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.description.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.publisher.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.isbn.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.language.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.published_year.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.authors.iter().any(|a| re.is_match(&a.name)) ||
-        self.genres.iter().any(|g| re.is_match(g)) ||
-        self.tags.iter().any(|t| re.is_match(t))
+        self.title.as_deref().is_some_and(|s| re.is_match(s))
+            || self.subtitle.as_deref().is_some_and(|s| re.is_match(s))
+            || self
+                .description
+                .as_deref()
+                .is_some_and(|s| re.is_match(s))
+            || self.publisher.as_deref().is_some_and(|s| re.is_match(s))
+            || self.isbn.as_deref().is_some_and(|s| re.is_match(s))
+            || self.language.as_deref().is_some_and(|s| re.is_match(s))
+            || self
+                .published_year
+                .as_deref()
+                .is_some_and(|s| re.is_match(s))
+            || self.authors.iter().any(|a| re.is_match(&a.name))
+            || self.genres.iter().any(|g| re.is_match(g))
+            || self.tags.iter().any(|t| re.is_match(t))
     }
 }
 
@@ -207,8 +213,18 @@ impl AppConfig {
     }
 }
 
-fn default_port() -> u16 { 3010 }
-fn default_use_proxy() -> bool { false }
-fn default_abs_url() -> String { "http://localhost:3000".to_string() }
-fn default_false() -> bool { false }
-fn default_page_size() -> usize { 20 }
+fn default_port() -> u16 {
+    3010
+}
+fn default_use_proxy() -> bool {
+    false
+}
+fn default_abs_url() -> String {
+    "http://localhost:3000".to_string()
+}
+fn default_false() -> bool {
+    false
+}
+fn default_page_size() -> usize {
+    20
+}

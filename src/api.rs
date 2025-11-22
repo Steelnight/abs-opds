@@ -1,16 +1,26 @@
-use crate::models::{AbsItemsResponse, AbsLibrariesResponse, AbsLibrary, AbsLoginResponse, InternalUser};
+use crate::models::{
+    AbsItemsResponse, AbsLibrariesResponse, AbsLibrary, AbsLoginResponse, InternalUser,
+};
+use async_trait::async_trait;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use async_trait::async_trait;
 
 #[async_trait]
 pub trait AbsClient: Send + Sync {
     async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
     async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>>;
-    async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary>;
-    async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse>;
+    async fn get_library(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsLibrary>;
+    async fn get_items(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsItemsResponse>;
 }
 
 #[derive(Clone)]
@@ -60,7 +70,10 @@ impl AbsClient for ApiClient {
                         let mut cache = self.token_cache.write().unwrap();
                         cache.insert(
                             username.to_string(),
-                            (data.user.access_token.clone(), Instant::now() + self.cache_ttl),
+                            (
+                                data.user.access_token.clone(),
+                                Instant::now() + self.cache_ttl,
+                            ),
                         );
                     }
                     return Ok(InternalUser {
@@ -89,8 +102,12 @@ impl AbsClient for ApiClient {
         Ok(data.libraries)
     }
 
-    async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary> {
-         let url = format!("{}/api/libraries/{}", self.base_url, library_id);
+    async fn get_library(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsLibrary> {
+        let url = format!("{}/api/libraries/{}", self.base_url, library_id);
         let response = self
             .client
             .get(&url)
@@ -101,7 +118,11 @@ impl AbsClient for ApiClient {
         Ok(response.json::<AbsLibrary>().await?)
     }
 
-    async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse> {
+    async fn get_items(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsItemsResponse> {
         let url = format!("{}/api/libraries/{}/items", self.base_url, library_id);
         let response = self
             .client

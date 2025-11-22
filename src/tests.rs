@@ -1,6 +1,6 @@
 #[cfg(test)]
-mod tests {
-    use crate::models::{Library, LibraryItem, Author, InternalUser};
+mod tests_mod {
+    use crate::models::{Author, InternalUser, Library, LibraryItem};
     use crate::xml::OpdsBuilder;
     use quick_xml::Writer;
     use std::io::Cursor;
@@ -14,8 +14,9 @@ mod tests {
             None,
             None,
             None,
-            "/opds"
-        ).expect("Failed to build XML");
+            "/opds",
+        )
+        .expect("Failed to build XML");
 
         assert!(xml.contains("<id>test_id</id>"));
         assert!(xml.contains("<title>Test Title</title>"));
@@ -52,7 +53,9 @@ mod tests {
             isbn: None,
             language: Some("en".to_string()),
             published_year: Some("2023".to_string()),
-            authors: vec![Author { name: "Author Name".to_string() }],
+            authors: vec![Author {
+                name: "Author Name".to_string(),
+            }],
             narrators: vec![],
             series: vec![],
             format: Some("epub".to_string()),
@@ -65,7 +68,8 @@ mod tests {
         };
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
-        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000").expect("Failed to build entry");
+        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000")
+            .expect("Failed to build entry");
 
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("<id>urn:uuid:item1</id>"));

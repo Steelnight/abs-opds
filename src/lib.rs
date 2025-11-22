@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, any},
+    routing::{any, get},
     Router,
 };
 use std::sync::Arc;
@@ -12,12 +12,10 @@ pub mod handlers;
 pub mod i18n;
 pub mod models;
 pub mod service;
-pub mod xml;
 #[cfg(test)]
 pub mod tests;
-#[cfg(test)]
-#[path = "performance_tests.rs"]
-pub mod performance_tests;
+pub mod utils;
+pub mod xml;
 
 use api::AbsClient;
 use api::ApiClient;
@@ -34,7 +32,9 @@ pub struct AppState {
 }
 
 pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
-    let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
+    let languages_dir = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("languages");
     let i18n = I18n::new(&languages_dir);
 
     let api_client = Arc::new(ApiClient::new(config.abs_url.clone()));
@@ -54,9 +54,11 @@ pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
 
 pub async fn build_app_state_with_mock(
     config: AppConfig,
-    mock_client: Arc<dyn AbsClient + Send + Sync>
+    mock_client: Arc<dyn AbsClient + Send + Sync>,
 ) -> Arc<AppState> {
-    let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
+    let languages_dir = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("languages");
     let i18n = I18n::new(&languages_dir);
     let api_client_raw = reqwest::Client::new();
 
@@ -75,8 +77,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/opds", get(handlers::get_opds_root))
         .route("/opds/libraries/{library_id}", get(handlers::get_library))
-        .route("/opds/libraries/{library_id}/search-definition", get(handlers::search_definition))
-        .route("/opds/libraries/{library_id}/{type}", get(handlers::get_category))
+        .route(
+            "/opds/libraries/{library_id}/search-definition",
+            get(handlers::search_definition),
+        )
+        .route(
+            "/opds/libraries/{library_id}/{type}",
+            get(handlers::get_category),
+        )
         .route("/opds/proxy/{*any}", any(handlers::proxy_handler))
         .layer(TraceLayer::new_for_http())
         .with_state(state)

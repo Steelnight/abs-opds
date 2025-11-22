@@ -16,7 +16,7 @@ impl I18n {
         if let Ok(entries) = fs::read_dir(languages_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "json") {
+                if path.extension().is_some_and(|ext| ext == "json") {
                     if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
                         if let Ok(content) = fs::read_to_string(&path) {
                             if let Ok(json) = serde_json::from_str(&content) {
@@ -58,7 +58,7 @@ impl I18n {
         // Fallback
         if language != &self.fallback_language {
             if let Some(lang_map) = localizations.get(&self.fallback_language) {
-                 if let Some(val) = lang_map.get(key) {
+                if let Some(val) = lang_map.get(key) {
                     if let Some(s) = val.as_str() {
                         return s.to_string();
                     }
