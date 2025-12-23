@@ -280,7 +280,7 @@ impl OpdsBuilder {
         url.push_attribute(("type", "application/atom+xml;profile=opds-catalog;kind=acquisition"));
 
         // Fix formatting of template string attribute
-        let template = format!("/opds/libraries/{}?q={{searchTerms}}&amp;author={{atom:author}}&amp;title={{atom:title}}", id);
+        let template = format!("/opds/libraries/{}?q={{searchTerms}}&author={{atom:author}}&title={{atom:title}}", id);
         url.push_attribute(("template", template.as_str()));
 
         let _ = writer.write_event(Event::Empty(url));
