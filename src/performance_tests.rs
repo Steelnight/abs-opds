@@ -1,14 +1,16 @@
 #[cfg(test)]
 mod tests {
     use crate::api::AbsClient;
-    use crate::models::{AbsItemsResponse, AbsLibrary, AbsItemResult, AbsMedia, AbsMetadata, InternalUser, AppConfig};
-    use crate::service::LibraryService;
-    use crate::i18n::I18n;
     use crate::handlers::LibraryQuery;
+    use crate::i18n::I18n;
+    use crate::models::{
+        AbsItemResult, AbsItemsResponse, AbsLibrary, AbsMedia, AbsMetadata, AppConfig, InternalUser,
+    };
+    use crate::service::LibraryService;
+    use async_trait::async_trait;
     use mockall::mock;
     use std::sync::Arc;
     use std::time::Instant;
-    use async_trait::async_trait;
 
     mock! {
         pub AbsClient {}
@@ -46,15 +48,22 @@ mod tests {
     }
 
     fn mock_i18n() -> I18n {
-         let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
-         I18n::new(&languages_dir)
+        let languages_dir = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join("languages");
+        I18n::new(&languages_dir)
     }
 
     fn mock_items_response(items: Vec<AbsItemResult>) -> AbsItemsResponse {
         AbsItemsResponse { results: items }
     }
 
-    fn create_item(id: &str, title: &str, author: Option<&str>, genre: Option<&str>) -> AbsItemResult {
+    fn create_item(
+        id: &str,
+        title: &str,
+        author: Option<&str>,
+        genre: Option<&str>,
+    ) -> AbsItemResult {
         AbsItemResult {
             id: id.to_string(),
             media: AbsMedia {
@@ -88,7 +97,7 @@ mod tests {
                 &format!("{}", i),
                 &format!("Book Title {}", i),
                 Some(&format!("Author {}", i % 500)), // 500 distinct authors
-                Some(&format!("Genre {}", i % 50))    // 50 distinct genres
+                Some(&format!("Genre {}", i % 50)),   // 50 distinct genres
             ));
         }
 
@@ -96,9 +105,13 @@ mod tests {
             .expect_get_items()
             .returning(move |_, _| Ok(mock_items_response(items.clone())));
 
-        mock_client
-            .expect_get_library()
-            .returning(|_, _| Ok(AbsLibrary { id: "lib1".to_string(), name: "Test Library".to_string(), icon: None }));
+        mock_client.expect_get_library().returning(|_, _| {
+            Ok(AbsLibrary {
+                id: "lib1".to_string(),
+                name: "Test Library".to_string(),
+                icon: None,
+            })
+        });
 
         let service = LibraryService::new(Arc::new(mock_client), mock_config(), mock_i18n());
 
@@ -117,7 +130,10 @@ mod tests {
 
         // Measure get_filtered_items
         let start = Instant::now();
-        let (filtered, total) = service.get_filtered_items(&user, "lib1", &query).await.unwrap();
+        let (filtered, total) = service
+            .get_filtered_items(&user, "lib1", &query)
+            .await
+            .unwrap();
         let duration = start.elapsed();
         println!("get_filtered_items took: {:?}", duration);
         assert!(total > 0);
@@ -125,17 +141,47 @@ mod tests {
 
         // Measure get_categories (Authors)
         let start = Instant::now();
-        let _categories = service.get_categories(&user, "lib1", "authors", &LibraryQuery {
-             q: None, page: 0, categories: None, author: None, title: None, name: None, type_: None, start: None
-        }).await.unwrap();
+        let _categories = service
+            .get_categories(
+                &user,
+                "lib1",
+                "authors",
+                &LibraryQuery {
+                    q: None,
+                    page: 0,
+                    categories: None,
+                    author: None,
+                    title: None,
+                    name: None,
+                    type_: None,
+                    start: None,
+                },
+            )
+            .await
+            .unwrap();
         let duration = start.elapsed();
         println!("get_categories (authors) took: {:?}", duration);
 
         // Measure get_categories (Genres)
         let start = Instant::now();
-        let _categories = service.get_categories(&user, "lib1", "genres", &LibraryQuery {
-             q: None, page: 0, categories: None, author: None, title: None, name: None, type_: None, start: None
-        }).await.unwrap();
+        let _categories = service
+            .get_categories(
+                &user,
+                "lib1",
+                "genres",
+                &LibraryQuery {
+                    q: None,
+                    page: 0,
+                    categories: None,
+                    author: None,
+                    title: None,
+                    name: None,
+                    type_: None,
+                    start: None,
+                },
+            )
+            .await
+            .unwrap();
         let duration = start.elapsed();
         println!("get_categories (genres) took: {:?}", duration);
     }
