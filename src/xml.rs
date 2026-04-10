@@ -87,6 +87,11 @@ impl OpdsBuilder {
                     "opensearch:itemsPerPage",
                     &page_size.to_string(),
                 )?;
+                Self::write_elem_ns(
+                    &mut writer,
+                    "opensearch:totalPages",
+                    &total_pages.to_string(),
+                )?;
 
                 let clean_url = if url_base.contains("?page=") || url_base.contains("&page=") {
                     regex::Regex::new(r"[?&]page=\d+")
