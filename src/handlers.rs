@@ -32,13 +32,14 @@ pub async fn get_opds_root(
 ) -> Response {
     match state.service.get_libraries(&user).await {
         Ok(libraries) => {
+            let updated_time = chrono::Utc::now().to_rfc3339();
             if libraries.len() == 1 {
                  let library_id = &libraries[0].id;
                  let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
                  let xml = OpdsBuilder::build_opds_skeleton(
                      &format!("urn:uuid:{}", library_id),
                      "Categories",
-                     OpdsBuilder::build_category_entries(library_id, &state.i18n, lang),
+                     OpdsBuilder::build_category_entries(library_id, &state.i18n, lang, &updated_time),
                      None,
                      None,
                      None,
@@ -54,7 +55,7 @@ pub async fn get_opds_root(
             let xml = OpdsBuilder::build_opds_skeleton(
                 &user_hash,
                 &format!("{}'s Libraries", user.name),
-                OpdsBuilder::build_library_entry_list(&libraries),
+                OpdsBuilder::build_library_entry_list(&libraries, &updated_time),
                 None,
                 Some(&user),
                 None,
@@ -78,12 +79,13 @@ pub async fn get_library(
     headers: HeaderMap,
 ) -> Response {
     let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
+    let updated_time = chrono::Utc::now().to_rfc3339();
 
     if query.categories.is_some() {
          let xml = OpdsBuilder::build_opds_skeleton(
              &format!("urn:uuid:{}", library_id),
              "Categories",
-             OpdsBuilder::build_category_entries(&library_id, &state.i18n, lang),
+             OpdsBuilder::build_category_entries(&library_id, &state.i18n, lang, &updated_time),
              None,
              None,
              None,
@@ -114,12 +116,13 @@ pub async fn get_library(
                         url_base.push_str(&params.join("&"));
                     }
 
+                    let mut url_buf = String::with_capacity(256);
                     let xml = OpdsBuilder::build_opds_skeleton(
                         &format!("urn:uuid:{}", library_id),
                         &library.name,
                         |writer| {
                             for item in paginated_items {
-                                OpdsBuilder::build_item_entry(writer, &item, &user, link_url)?;
+                                OpdsBuilder::build_item_entry(writer, &item, &user, link_url, &updated_time, &mut url_buf)?;
                             }
                             Ok(())
                         },

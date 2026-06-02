@@ -141,6 +141,7 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
         query: &crate::handlers::LibraryQuery,
     ) -> Result<String> {
         // Logic from get_category handler
+         let updated_time = chrono::Utc::now().to_rfc3339();
          let items_data = self.client.get_items(user, library_id).await?;
          let lib_data = self.client.get_library(user, library_id).await?;
 
@@ -204,23 +205,23 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
               let mut keys: Vec<String> = count_by_start.keys().cloned().collect();
               keys.sort();
 
-              OpdsBuilder::build_opds_skeleton(
-                    &format!("urn:uuid:{}", library_id),
-                    &library.name,
-                    |writer| {
-                        for letter in keys {
-                            let count = count_by_start[&letter];
-                            let title = format!("{} ({})", letter, count);
-                            let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
-                            OpdsBuilder::build_custom_card_entry(writer, &title, &link)?;
-                        }
-                        Ok(())
-                    },
-                    None,
-                    None,
-                    None,
-                    &format!("/opds/libraries/{}/{}", library_id, type_)
-                ).map_err(|e| e.into())
+               OpdsBuilder::build_opds_skeleton(
+                     &format!("urn:uuid:{}", library_id),
+                     &library.name,
+                     |writer| {
+                         for letter in keys {
+                             let count = count_by_start[&letter];
+                             let title = format!("{} ({})", letter, count);
+                             let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
+                             OpdsBuilder::build_custom_card_entry(writer, &title, &link, &updated_time)?;
+                         }
+                         Ok(())
+                     },
+                     None,
+                     None,
+                     None,
+                     &format!("/opds/libraries/{}/{}", library_id, type_)
+                 ).map_err(|e| e.into())
          } else {
              if let Some(start) = &query.start {
                  distinct_type_array.retain(|item| {
@@ -230,15 +231,15 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                  });
              }
 
-              OpdsBuilder::build_opds_skeleton(
-                 &format!("urn:uuid:{}", library_id),
-                 &library.name,
-                 |writer| {
-                     for item in distinct_type_array {
-                         OpdsBuilder::build_card_entry(writer, &item, &type_, &library_id)?;
-                     }
-                     Ok(())
-                 },
+               OpdsBuilder::build_opds_skeleton(
+                  &format!("urn:uuid:{}", library_id),
+                  &library.name,
+                  |writer| {
+                      for item in distinct_type_array {
+                          OpdsBuilder::build_card_entry(writer, &item, &type_, &library_id, &updated_time)?;
+                      }
+                      Ok(())
+                  },
                  None,
                  None,
                  None,

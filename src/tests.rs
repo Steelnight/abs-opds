@@ -31,7 +31,7 @@ mod tests {
         };
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
-        OpdsBuilder::build_library_entry(&mut writer, &lib).expect("Failed to build entry");
+        OpdsBuilder::build_library_entry(&mut writer, &lib, "2026-06-02T12:00:00Z").expect("Failed to build entry");
 
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("<id>lib1</id>"));
@@ -65,7 +65,8 @@ mod tests {
         };
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
-        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000").expect("Failed to build entry");
+        let mut url_buf = String::new();
+        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000", "2026-06-02T12:00:00Z", &mut url_buf).expect("Failed to build entry");
 
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("<id>urn:uuid:item1</id>"));

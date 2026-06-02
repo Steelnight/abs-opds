@@ -381,13 +381,15 @@ fn bench_xml_layer(c: &mut Criterion) {
         group.throughput(Throughput::Elements(n_items as u64));
 
         group.bench_with_input(BenchmarkId::new("xml_build_entries", n_items), &n_items, |b, &_| {
+            let updated_time = chrono::Utc::now().to_rfc3339();
+            let mut url_buf = String::with_capacity(256);
             b.iter(|| {
                  OpdsBuilder::build_opds_skeleton(
                         "urn:uuid:lib1",
                         "Lib",
                         |writer| {
                             for item in &library_items {
-                                OpdsBuilder::build_item_entry(writer, item, &user, "/opds")?;
+                                OpdsBuilder::build_item_entry(writer, item, &user, "/opds", &updated_time, &mut url_buf)?;
                             }
                             Ok(())
                         },
@@ -400,12 +402,14 @@ fn bench_xml_layer(c: &mut Criterion) {
         });
 
         let start = std::time::Instant::now();
+        let updated_time = chrono::Utc::now().to_rfc3339();
+        let mut url_buf = String::with_capacity(256);
          OpdsBuilder::build_opds_skeleton(
                 "urn:uuid:lib1",
                 "Lib",
                 |writer| {
                     for item in &library_items {
-                        OpdsBuilder::build_item_entry(writer, item, &user, "/opds")?;
+                        OpdsBuilder::build_item_entry(writer, item, &user, "/opds", &updated_time, &mut url_buf)?;
                     }
                     Ok(())
                 },

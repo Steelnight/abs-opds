@@ -120,22 +120,22 @@ impl OpdsBuilder {
         Ok(())
     }
 
-    pub fn build_library_entry_list<'a>(libraries: &'a [Library]) -> impl FnOnce(&mut Writer<Cursor<Vec<u8>>>) -> Result<(), quick_xml::Error> + 'a {
+    pub fn build_library_entry_list<'a>(libraries: &'a [Library], updated_time: &'a str) -> impl FnOnce(&mut Writer<Cursor<Vec<u8>>>) -> Result<(), quick_xml::Error> + 'a {
         move |writer| {
             for lib in libraries {
-                Self::build_library_entry(writer, lib)?;
+                Self::build_library_entry(writer, lib, updated_time)?;
             }
             Ok(())
         }
     }
 
-    pub fn build_library_entry(writer: &mut Writer<Cursor<Vec<u8>>>, library: &Library) -> Result<(), quick_xml::Error> {
+    pub fn build_library_entry(writer: &mut Writer<Cursor<Vec<u8>>>, library: &Library, updated_time: &str) -> Result<(), quick_xml::Error> {
         let entry = BytesStart::new("entry");
         writer.write_event(Event::Start(entry))?;
 
         Self::write_elem(writer, "id", &library.id)?;
         Self::write_elem(writer, "title", &library.name)?;
-        Self::write_elem(writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+        Self::write_elem(writer, "updated", updated_time)?;
 
         Self::write_link(writer, "subsection", "application/atom+xml;profile=opds-catalog", "", &format!("/opds/libraries/{}?categories=true", library.id))?;
 
@@ -143,7 +143,7 @@ impl OpdsBuilder {
         Ok(())
     }
 
-    pub fn build_category_entries<'a>(library_id: &'a str, i18n: &'a crate::i18n::I18n, lang: Option<&'a str>) -> impl FnOnce(&mut Writer<Cursor<Vec<u8>>>) -> Result<(), quick_xml::Error> + 'a {
+    pub fn build_category_entries<'a>(library_id: &'a str, i18n: &'a crate::i18n::I18n, lang: Option<&'a str>, updated_time: &'a str) -> impl FnOnce(&mut Writer<Cursor<Vec<u8>>>) -> Result<(), quick_xml::Error> + 'a {
         move |writer| {
             let categories = vec![
                 (library_id.to_string(), i18n.localize("category.all", lang)),
@@ -157,7 +157,7 @@ impl OpdsBuilder {
                 writer.write_event(Event::Start(BytesStart::new("entry")))?;
                 Self::write_elem(writer, "id", &id)?;
                 Self::write_elem(writer, "title", &title)?;
-                Self::write_elem(writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+                Self::write_elem(writer, "updated", updated_time)?;
 
                 let href = if id == library_id {
                      format!("/opds/libraries/{}", library_id)
@@ -173,13 +173,13 @@ impl OpdsBuilder {
         }
     }
 
-    pub fn build_card_entry(writer: &mut Writer<Cursor<Vec<u8>>>, item: &str, type_: &str, library_id: &str) -> Result<(), quick_xml::Error> {
+    pub fn build_card_entry(writer: &mut Writer<Cursor<Vec<u8>>>, item: &str, type_: &str, library_id: &str, updated_time: &str) -> Result<(), quick_xml::Error> {
         writer.write_event(Event::Start(BytesStart::new("entry")))?;
 
         let id = item.to_lowercase().replace(" ", "-");
         Self::write_elem(writer, "id", &id)?;
         Self::write_elem(writer, "title", item)?;
-        Self::write_elem(writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+        Self::write_elem(writer, "updated", updated_time)?;
 
         let href = format!("/opds/libraries/{}?name={}&type={}", library_id, item, type_);
          Self::write_link(writer, "subsection", "application/atom+xml;profile=opds-catalog", "", &href)?;
@@ -188,13 +188,13 @@ impl OpdsBuilder {
         Ok(())
     }
 
-    pub fn build_custom_card_entry(writer: &mut Writer<Cursor<Vec<u8>>>, item: &str, link: &str) -> Result<(), quick_xml::Error> {
+    pub fn build_custom_card_entry(writer: &mut Writer<Cursor<Vec<u8>>>, item: &str, link: &str, updated_time: &str) -> Result<(), quick_xml::Error> {
         writer.write_event(Event::Start(BytesStart::new("entry")))?;
 
         let id = item.to_lowercase().replace(" ", "-");
         Self::write_elem(writer, "id", &id)?;
         Self::write_elem(writer, "title", item)?;
-        Self::write_elem(writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+        Self::write_elem(writer, "updated", updated_time)?;
 
          Self::write_link(writer, "subsection", "application/atom+xml;profile=opds-catalog", "", link)?;
 
@@ -202,13 +202,24 @@ impl OpdsBuilder {
         Ok(())
     }
 
-    pub fn build_item_entry(writer: &mut Writer<Cursor<Vec<u8>>>, item: &LibraryItem, user: &InternalUser, link_url: &str) -> Result<(), quick_xml::Error> {
+    pub fn build_item_entry(
+        writer: &mut Writer<Cursor<Vec<u8>>>,
+        item: &LibraryItem,
+        user: &InternalUser,
+        link_url: &str,
+        updated_time: &str,
+        url_buf: &mut String,
+    ) -> Result<(), quick_xml::Error> {
         writer.write_event(Event::Start(BytesStart::new("entry")))?;
 
-        Self::write_elem(writer, "id", &format!("urn:uuid:{}", item.id))?;
+        url_buf.clear();
+        use std::fmt::Write as _;
+        let _ = write!(url_buf, "urn:uuid:{}", item.id);
+        Self::write_elem(writer, "id", url_buf)?;
+
         if let Some(t) = &item.title { Self::write_elem(writer, "title", t)?; }
         if let Some(s) = &item.subtitle { Self::write_elem(writer, "subtitle", s)?; }
-        Self::write_elem(writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+        Self::write_elem(writer, "updated", updated_time)?;
 
         if let Some(desc) = &item.description {
              let mut content = BytesStart::new("content");
@@ -232,17 +243,21 @@ impl OpdsBuilder {
              _ => "application/octet-stream"
         };
 
-        Self::write_link(writer, "http://opds-spec.org/acquisition", "application/octet-stream", "",
-            &format!("{}/api/items/{}/download?token={}", link_url, item.id, user.api_key))?;
+        url_buf.clear();
+        let _ = write!(url_buf, "{}/api/items/{}/download?token={}", link_url, item.id, user.api_key);
+        Self::write_link(writer, "http://opds-spec.org/acquisition", "application/octet-stream", "", url_buf)?;
 
-        Self::write_link(writer, "http://opds-spec.org/acquisition", mime_type, "",
-            &format!("{}/api/items/{}/ebook?token={}", link_url, item.id, user.api_key))?;
+        url_buf.clear();
+        let _ = write!(url_buf, "{}/api/items/{}/ebook?token={}", link_url, item.id, user.api_key);
+        Self::write_link(writer, "http://opds-spec.org/acquisition", mime_type, "", url_buf)?;
 
-        Self::write_link(writer, "http://opds-spec.org/image", "image/webp", "",
-            &format!("{}/api/items/{}/cover?token={}", link_url, item.id, user.api_key))?;
+        url_buf.clear();
+        let _ = write!(url_buf, "{}/api/items/{}/cover?token={}", link_url, item.id, user.api_key);
+        Self::write_link(writer, "http://opds-spec.org/image", "image/webp", "", url_buf)?;
 
-        Self::write_link(writer, "http://opds-spec.org/image", "image/png", "",
-            &format!("{}/api/items/{}/cover?token={}", link_url, item.id, user.api_key))?;
+        url_buf.clear();
+        let _ = write!(url_buf, "{}/api/items/{}/cover?token={}", link_url, item.id, user.api_key);
+        Self::write_link(writer, "http://opds-spec.org/image", "image/png", "", url_buf)?;
 
         for author in &item.authors {
              writer.write_event(Event::Start(BytesStart::new("author")))?;
