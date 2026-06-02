@@ -1,7 +1,5 @@
 use serde_json::Value;
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -11,21 +9,17 @@ pub struct I18n {
 }
 
 impl I18n {
-    pub fn new(languages_dir: &Path) -> Self {
+    pub fn new() -> Self {
         let mut localizations = HashMap::new();
-        if let Ok(entries) = fs::read_dir(languages_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().map_or(false, |ext| ext == "json") {
-                    if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        if let Ok(content) = fs::read_to_string(&path) {
-                            if let Ok(json) = serde_json::from_str(&content) {
-                                localizations.insert(file_stem.to_lowercase(), json);
-                            }
-                        }
-                    }
-                }
-            }
+
+        if let Ok(json) = serde_json::from_str(include_str!("../languages/en.json")) {
+            localizations.insert("en".to_string(), json);
+        }
+        if let Ok(json) = serde_json::from_str(include_str!("../languages/de.json")) {
+            localizations.insert("de".to_string(), json);
+        }
+        if let Ok(json) = serde_json::from_str(include_str!("../languages/cs.json")) {
+            localizations.insert("cs".to_string(), json);
         }
 
         I18n {

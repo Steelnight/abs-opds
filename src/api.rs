@@ -14,10 +14,17 @@ pub trait AbsClient: Send + Sync {
 }
 
 #[derive(Clone)]
+struct CachedSession {
+    token: String,
+    password_hash: String,
+    expires: Instant,
+}
+
+#[derive(Clone)]
 pub struct ApiClient {
     base_url: String,
     client: Client,
-    token_cache: Arc<RwLock<HashMap<String, (String, Instant)>>>,
+    token_cache: Arc<RwLock<HashMap<String, CachedSession>>>,
     cache_ttl: Duration,
 }
 
@@ -35,14 +42,20 @@ impl ApiClient {
 #[async_trait]
 impl AbsClient for ApiClient {
     async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser> {
+        let incoming_hash = {
+            let mut hasher = sha1_smol::Sha1::new();
+            hasher.update(password.as_bytes());
+            hasher.digest().to_string()
+        };
+
         // Check cache
         {
             let cache = self.token_cache.read().unwrap();
-            if let Some((token, expires)) = cache.get(username) {
-                if Instant::now() < *expires {
+            if let Some(session) = cache.get(username) {
+                if Instant::now() < session.expires && session.password_hash == incoming_hash {
                     return Ok(InternalUser {
                         name: username.to_string(),
-                        api_key: token.clone(),
+                        api_key: session.token.clone(),
                         password: None,
                     });
                 }
@@ -60,7 +73,11 @@ impl AbsClient for ApiClient {
                         let mut cache = self.token_cache.write().unwrap();
                         cache.insert(
                             username.to_string(),
-                            (data.user.access_token.clone(), Instant::now() + self.cache_ttl),
+                            CachedSession {
+                                token: data.user.access_token.clone(),
+                                password_hash: incoming_hash,
+                                expires: Instant::now() + self.cache_ttl,
+                            },
                         );
                     }
                     return Ok(InternalUser {
@@ -85,6 +102,10 @@ impl AbsClient for ApiClient {
             .send()
             .await?;
 
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("Failed to fetch libraries: status {}", response.status()));
+        }
+
         let data = response.json::<AbsLibrariesResponse>().await?;
         Ok(data.libraries)
     }
@@ -98,6 +119,10 @@ impl AbsClient for ApiClient {
             .send()
             .await?;
 
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("Failed to fetch library details: status {}", response.status()));
+        }
+
         Ok(response.json::<AbsLibrary>().await?)
     }
 
@@ -109,6 +134,10 @@ impl AbsClient for ApiClient {
             .bearer_auth(&user.api_key)
             .send()
             .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("Failed to fetch library items: status {}", response.status()));
+        }
 
         Ok(response.json::<AbsItemsResponse>().await?)
     }

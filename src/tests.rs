@@ -74,4 +74,94 @@ mod tests {
         assert!(entry.contains("application/epub+zip"));
         assert!(entry.contains("token=token"));
     }
+
+    #[test]
+    fn test_xml_escaping() {
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+        OpdsBuilder::write_link(&mut writer, "alternate", "text/html", "Dungeons & Dragons", "http://localhost:3000/opds?q=foo&type=epub")
+            .expect("Failed to write link");
+
+        let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
+        assert!(entry.contains("title=\"Dungeons &amp; Dragons\""));
+        assert!(entry.contains("href=\"http://localhost:3000/opds?q=foo&amp;type=epub\""));
+    }
+
+    #[test]
+    fn test_search_definition_escaping() {
+        let xml = OpdsBuilder::build_search_definition("lib-123").unwrap();
+        assert!(xml.contains("template=\"/opds/libraries/lib-123?q={searchTerms}&amp;author={atom:author}&amp;title={atom:title}\""));
+    }
+
+    #[test]
+    fn test_password_colon_parsing() {
+        let mut config = crate::models::AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "my_user:my_token:my:pass:with:colons".to_string(),
+            internal_users: vec![],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        config.parse_users().expect("Failed to parse users");
+        assert_eq!(config.internal_users.len(), 1);
+        assert_eq!(config.internal_users[0].name, "my_user");
+        assert_eq!(config.internal_users[0].api_key, "my_token");
+        assert_eq!(config.internal_users[0].password.as_deref(), Some("my:pass:with:colons"));
+    }
+
+    #[tokio::test]
+    async fn test_api_client_login_cache() {
+        use wiremock::{MockServer, Mock, ResponseTemplate};
+        use wiremock::matchers::{method, path, body_json};
+
+        let mock_server = MockServer::start().await;
+
+        // Mock success only for the correct password
+        Mock::given(method("POST"))
+            .and(path("/login"))
+            .and(body_json(serde_json::json!({
+                "username": "test_user",
+                "password": "password123"
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "user": {
+                    "username": "test_user",
+                    "accessToken": "test_token"
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Mock failure for the wrong password
+        Mock::given(method("POST"))
+            .and(path("/login"))
+            .and(body_json(serde_json::json!({
+                "username": "test_user",
+                "password": "wrong_password"
+            })))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&mock_server)
+            .await;
+
+        let client = crate::api::ApiClient::new(mock_server.uri());
+        use crate::api::AbsClient;
+
+        // 1. Success login
+        let user = client.login("test_user", "password123").await.unwrap();
+        assert_eq!(user.api_key, "test_token");
+
+        // 2. Success login again (cached)
+        let user_cached = client.login("test_user", "password123").await.unwrap();
+        assert_eq!(user_cached.api_key, "test_token");
+
+        // 3. Login with wrong password (should fail because it hits backend and gets 401, instead of using cached token!)
+        let err = client.login("test_user", "wrong_password").await;
+        assert!(err.is_err());
+    }
 }

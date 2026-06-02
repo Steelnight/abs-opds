@@ -34,8 +34,7 @@ pub struct AppState {
 }
 
 pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
-    let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
-    let i18n = I18n::new(&languages_dir);
+    let i18n = I18n::new();
 
     let api_client = Arc::new(ApiClient::new(config.abs_url.clone()));
     let api_client_raw = reqwest::Client::new();
@@ -56,8 +55,7 @@ pub async fn build_app_state_with_mock(
     config: AppConfig,
     mock_client: Arc<dyn AbsClient + Send + Sync>
 ) -> Arc<AppState> {
-    let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
-    let i18n = I18n::new(&languages_dir);
+    let i18n = I18n::new();
     let api_client_raw = reqwest::Client::new();
 
     let service = LibraryService::new(mock_client.clone(), config.clone(), i18n.clone());

@@ -15,11 +15,9 @@ use tokio::runtime::Runtime;
 use std::fs::File;
 use std::io::Write;
 use std::sync::Mutex;
-use tower_http::trace::TraceLayer;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
-    Router,
 };
 use tower::ServiceExt;
 use async_trait::async_trait;
@@ -104,8 +102,7 @@ fn mock_config() -> AppConfig {
 }
 
 fn mock_i18n() -> I18n {
-    let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
-    I18n::new(&languages_dir)
+    I18n::new()
 }
 
 // --- Reporting ---

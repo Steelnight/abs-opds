@@ -1,0 +1,49 @@
+# Performance Benchmark Report
+
+| Metric | Items | Authors | Genres | Time (ms) | Throughput (items/s) |
+|---|---|---|---|---|---|
+| get_filtered_items | 100 | 2 | 1 | 0.16 | 623216.04 |
+| get_categories_authors | 100 | 2 | 1 | 0.14 | 694844.95 |
+| get_filtered_items | 168 | 4 | 1 | 0.17 | 994818.65 |
+| get_categories_authors | 168 | 4 | 1 | 0.31 | 535813.38 |
+| get_filtered_items | 283 | 7 | 1 | 0.22 | 1280305.46 |
+| get_categories_authors | 283 | 7 | 1 | 0.30 | 948337.39 |
+| get_filtered_items | 477 | 11 | 1 | 0.24 | 1950920.25 |
+| get_categories_authors | 477 | 11 | 1 | 0.54 | 888061.44 |
+| get_filtered_items | 804 | 20 | 1 | 0.31 | 2607215.24 |
+| get_categories_authors | 804 | 20 | 1 | 0.44 | 1819173.27 |
+| get_filtered_items | 1354 | 33 | 1 | 0.48 | 2849776.37 |
+| get_categories_authors | 1354 | 33 | 1 | 0.39 | 3439822.17 |
+| get_filtered_items | 2281 | 57 | 1 | 0.63 | 3647901.54 |
+| get_categories_authors | 2281 | 57 | 1 | 0.59 | 3898592.17 |
+| get_filtered_items | 3842 | 96 | 1 | 0.88 | 4376686.68 |
+| get_categories_authors | 3842 | 96 | 1 | 0.85 | 4522213.22 |
+| get_filtered_items | 6470 | 161 | 1 | 1.37 | 4720474.24 |
+| get_categories_authors | 6470 | 161 | 1 | 1.19 | 5432788.35 |
+| get_filtered_items | 10897 | 272 | 2 | 2.18 | 4987947.81 |
+| get_categories_authors | 10897 | 272 | 2 | 2.05 | 5309135.20 |
+| get_filtered_items | 18352 | 458 | 4 | 3.60 | 5096421.56 |
+| get_categories_authors | 18352 | 458 | 4 | 2.82 | 6517913.43 |
+| get_filtered_items | 30907 | 772 | 7 | 5.70 | 5426803.04 |
+| get_categories_authors | 30907 | 772 | 7 | 4.54 | 6807709.25 |
+| get_filtered_items | 52052 | 1301 | 13 | 9.69 | 5374103.23 |
+| get_categories_authors | 52052 | 1301 | 13 | 7.29 | 7138845.55 |
+| get_filtered_items | 87661 | 2191 | 21 | 15.91 | 5510627.76 |
+| get_categories_authors | 87661 | 2191 | 21 | 12.06 | 7269668.54 |
+| get_filtered_items | 147631 | 3690 | 36 | 27.48 | 5371484.60 |
+| get_categories_authors | 147631 | 3690 | 36 | 20.89 | 7065740.71 |
+| get_filtered_items | 248627 | 6215 | 62 | 44.40 | 5599733.44 |
+| get_categories_authors | 248627 | 6215 | 62 | 35.89 | 6926821.45 |
+| get_filtered_items | 418716 | 10467 | 104 | 71.57 | 5850205.12 |
+| get_categories_authors | 418716 | 10467 | 104 | 56.07 | 7467453.75 |
+| get_filtered_items | 705163 | 17629 | 176 | 125.00 | 5641437.50 |
+| get_categories_authors | 705163 | 17629 | 176 | 108.86 | 6477789.63 |
+| get_filtered_items | 1187572 | 29689 | 296 | 207.24 | 5730400.42 |
+| get_categories_authors | 1187572 | 29689 | 296 | 172.48 | 6885393.41 |
+| get_filtered_items | 2000000 | 50000 | 500 | 338.17 | 5914175.71 |
+| get_categories_authors | 2000000 | 50000 | 500 | 276.97 | 7221067.10 |
+| handler_get_library | 1000 | 25 | 1 | 0.66 | 1525746.20 |
+| handler_get_library | 10000 | 250 | 2 | 2.37 | 4212005.39 |
+| proxy_request | 1 | 0 | 0 | 0.14 | 6946.47 |
+| xml_build_entries | 1000 | 25 | 1 | 1.46 | 685812.26 |
+| xml_build_entries | 10000 | 250 | 2 | 14.82 | 674904.28 |

@@ -110,7 +110,7 @@ impl OpdsBuilder {
         Ok(())
     }
 
-    fn write_link(writer: &mut Writer<Cursor<Vec<u8>>>, rel: &str, type_: &str, title: &str, href: &str) -> Result<(), quick_xml::Error> {
+    pub(crate) fn write_link(writer: &mut Writer<Cursor<Vec<u8>>>, rel: &str, type_: &str, title: &str, href: &str) -> Result<(), quick_xml::Error> {
         let mut link = BytesStart::new("link");
         if !rel.is_empty() { link.push_attribute(("rel", rel)); }
         if !type_.is_empty() { link.push_attribute(("type", type_)); }
@@ -261,20 +261,18 @@ impl OpdsBuilder {
         Ok(())
     }
 
-     pub fn build_search_definition(id: &str) -> String {
+     pub fn build_search_definition(id: &str) -> Result<String, quick_xml::Error> {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
-        // XML generation in memory should not fail, but we should still handle errors properly in a real app
-        // For brevity, we unwrap here as these are unlikely to fail with Vec<u8>
-        let _ = writer.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)));
+        writer.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))?;
 
         let mut root = BytesStart::new("OpenSearchDescription");
         root.push_attribute(("xmlns", "http://a9.com/-/spec/opensearch/1.1/"));
         root.push_attribute(("xmlns:atom", "http://www.w3.org/2005/Atom"));
-        let _ = writer.write_event(Event::Start(root));
+        writer.write_event(Event::Start(root))?;
 
-        let _ = Self::write_elem(&mut writer, "ShortName", "ABS");
-        let _ = Self::write_elem(&mut writer, "LongName", "Audiobookshelf");
-        let _ = Self::write_elem(&mut writer, "Description", "Search for books in Audiobookshelf");
+        Self::write_elem(&mut writer, "ShortName", "ABS")?;
+        Self::write_elem(&mut writer, "LongName", "Audiobookshelf")?;
+        Self::write_elem(&mut writer, "Description", "Search for books in Audiobookshelf")?;
 
         let mut url = BytesStart::new("Url");
         url.push_attribute(("type", "application/atom+xml;profile=opds-catalog;kind=acquisition"));
@@ -283,9 +281,9 @@ impl OpdsBuilder {
         let template = format!("/opds/libraries/{}?q={{searchTerms}}&author={{atom:author}}&title={{atom:title}}", id);
         url.push_attribute(("template", template.as_str()));
 
-        let _ = writer.write_event(Event::Empty(url));
+        writer.write_event(Event::Empty(url))?;
 
-        let _ = writer.write_event(Event::End(BytesEnd::new("OpenSearchDescription")));
-        String::from_utf8(writer.into_inner().into_inner()).unwrap_or_default()
+        writer.write_event(Event::End(BytesEnd::new("OpenSearchDescription")))?;
+        Ok(String::from_utf8(writer.into_inner().into_inner()).unwrap_or_default())
      }
 }

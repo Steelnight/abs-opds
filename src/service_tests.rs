@@ -45,8 +45,7 @@ mod tests {
     }
 
     fn mock_i18n() -> I18n {
-         let languages_dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")).join("languages");
-         I18n::new(&languages_dir)
+         I18n::new()
     }
 
     fn mock_items_response(items: Vec<AbsItemResult>) -> AbsItemsResponse {

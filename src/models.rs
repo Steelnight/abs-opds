@@ -39,17 +39,20 @@ pub struct LibraryItem {
 }
 
 impl LibraryItem {
-    pub fn matches(&self, re: &regex::Regex) -> bool {
-        self.title.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.subtitle.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.description.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.publisher.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.isbn.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.language.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.published_year.as_deref().map_or(false, |s| re.is_match(s)) ||
-        self.authors.iter().any(|a| re.is_match(&a.name)) ||
-        self.genres.iter().any(|g| re.is_match(g)) ||
-        self.tags.iter().any(|t| re.is_match(t))
+    pub fn matches_search(&self, term: &str) -> bool {
+        if term.is_empty() {
+            return true;
+        }
+        self.title.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+        self.subtitle.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+        self.description.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+        self.publisher.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+        self.isbn.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+        self.language.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+        self.published_year.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+        self.authors.iter().any(|a| a.name.to_lowercase().contains(term)) ||
+        self.genres.iter().any(|g| g.to_lowercase().contains(term)) ||
+        self.tags.iter().any(|t| t.to_lowercase().contains(term))
     }
 }
 
@@ -177,7 +180,7 @@ impl AppConfig {
             if user_str.trim().is_empty() {
                 continue;
             }
-            let parts: Vec<&str> = user_str.split(':').collect();
+            let parts: Vec<&str> = user_str.splitn(3, ':').collect();
             if parts.len() < 3 {
                 return Err(anyhow::anyhow!(
                     "Invalid user configuration: '{}'. Expected format: username:api_key:password",

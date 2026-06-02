@@ -28,12 +28,23 @@ pub struct LibraryQuery {
 pub async fn get_opds_root(
     State(state): State<Arc<AppState>>,
     AuthUser(user): AuthUser,
-    _headers: HeaderMap,
+    headers: HeaderMap,
 ) -> Response {
     match state.service.get_libraries(&user).await {
         Ok(libraries) => {
             if libraries.len() == 1 {
-                 return axum::response::Redirect::temporary(&format!("/opds/libraries/{}?categories=true", libraries[0].id)).into_response();
+                 let library_id = &libraries[0].id;
+                 let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
+                 let xml = OpdsBuilder::build_opds_skeleton(
+                     &format!("urn:uuid:{}", library_id),
+                     "Categories",
+                     OpdsBuilder::build_category_entries(library_id, &state.i18n, lang),
+                     None,
+                     None,
+                     None,
+                     &format!("/opds/libraries/{}", library_id)
+                 ).unwrap_or_else(|_| String::new());
+                 return ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response();
             }
 
             let mut hasher = Sha1::new();
@@ -156,8 +167,13 @@ pub async fn get_category(
 pub async fn search_definition(
     Path(library_id): Path<String>,
 ) -> Response {
-    let xml = OpdsBuilder::build_search_definition(&library_id);
-    ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response()
+    match OpdsBuilder::build_search_definition(&library_id) {
+        Ok(xml) => ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response(),
+        Err(e) => {
+            tracing::error!("Failed to build search definition: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build search definition").into_response()
+        }
+    }
 }
 
 pub async fn proxy_handler(
@@ -173,7 +189,7 @@ pub async fn proxy_handler(
     }
 
     let path = req.uri().path();
-    let target_path = path.trim_start_matches("/opds/proxy");
+    let target_path = path.strip_prefix("/opds/proxy").unwrap_or(path);
     let target_url = format!("{}{}", state.config.abs_url, target_path);
 
     let full_target_url = if let Some(query) = req.uri().query() {
@@ -182,18 +198,51 @@ pub async fn proxy_handler(
         target_url
     };
 
-    match state.api_client_raw.get(&full_target_url).send().await {
+    let mut request_builder = state.api_client_raw.get(&full_target_url);
+
+    // Forward safe request headers
+    let allowed_req_headers = [
+        axum::http::header::RANGE,
+        axum::http::header::IF_NONE_MATCH,
+        axum::http::header::IF_MODIFIED_SINCE,
+        axum::http::header::ACCEPT,
+        axum::http::header::ACCEPT_ENCODING,
+    ];
+
+    for header_name in &allowed_req_headers {
+        if let Some(value) = req.headers().get(header_name) {
+            request_builder = request_builder.header(header_name.clone(), value.clone());
+        }
+    }
+
+    match request_builder.send().await {
         Ok(resp) => {
             let mut headers = HeaderMap::new();
             // Convert reqwest status to axum status
             let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
 
+            // Hop-by-hop headers to strip
+            let hop_by_hop_headers = [
+                "connection",
+                "keep-alive",
+                "proxy-authenticate",
+                "proxy-authorization",
+                "te",
+                "trailer",
+                "transfer-encoding",
+                "upgrade",
+            ];
+
             for (k, v) in resp.headers() {
-                 if let Ok(h_name) = axum::http::header::HeaderName::from_bytes(k.as_str().as_bytes()) {
-                      if let Ok(h_val) = axum::http::header::HeaderValue::from_bytes(v.as_bytes()) {
+                let k_str = k.as_str().to_lowercase();
+                if hop_by_hop_headers.contains(&k_str.as_str()) {
+                    continue;
+                }
+                if let Ok(h_name) = axum::http::header::HeaderName::from_bytes(k.as_str().as_bytes()) {
+                     if let Ok(h_val) = axum::http::header::HeaderValue::from_bytes(v.as_bytes()) {
                           headers.insert(h_name, h_val);
-                      }
-                 }
+                     }
+                }
             }
 
             let stream = resp.bytes_stream();

@@ -81,55 +81,45 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
          }).collect();
 
          if query.q.is_some() || query.type_.is_some() {
-             let search_term = query.q.as_deref().unwrap_or("");
-             let re = regex::RegexBuilder::new(&regex::escape(search_term))
-                .case_insensitive(true)
-                .build()
-                .unwrap_or_else(|_| regex::Regex::new("").unwrap());
+              let search_term_lower = query.q.as_deref().unwrap_or("").to_lowercase();
+              let type_query = query.type_.as_ref();
+              let name_query_lower = query.name.as_deref().map(|n| n.to_lowercase());
 
-             let type_query = query.type_.as_ref();
-             let name_query_re = query.name.as_deref().map(|n| {
-                  regex::RegexBuilder::new(&regex::escape(n))
-                    .case_insensitive(true)
-                    .build()
-                    .unwrap_or_else(|_| regex::Regex::new("").unwrap())
-             });
-
-             parsed_items = parsed_items.into_par_iter().filter(|item| {
-                 if type_query == Some(&ItemType::Authors) {
-                     if let Some(re) = &name_query_re {
-                         return item.authors.iter().any(|a| re.is_match(&a.name));
-                     }
-                 } else if type_query == Some(&ItemType::Narrators) {
-                      if let Some(re) = &name_query_re {
-                         return item.narrators.iter().any(|a| re.is_match(&a.name));
-                     }
-                 } else if type_query == Some(&ItemType::Genres) {
-                     if let Some(re) = &name_query_re {
-                         return item.genres.iter().any(|g| re.is_match(g)) || item.tags.iter().any(|t| re.is_match(t));
-                     }
-                 } else if type_query == Some(&ItemType::Series) {
-                      if let Some(re) = &name_query_re {
-                         return item.series.iter().any(|s| re.is_match(s));
-                     }
-                 } else {
-                      if !search_term.is_empty() {
-                         return item.matches(&re);
+              parsed_items = parsed_items.into_par_iter().filter(|item| {
+                  if type_query == Some(&ItemType::Authors) {
+                      if let Some(n_lower) = &name_query_lower {
+                          return item.authors.iter().any(|a| a.name.to_lowercase().contains(n_lower));
                       }
-                 }
-                 true
-             }).collect();
-         }
+                  } else if type_query == Some(&ItemType::Narrators) {
+                       if let Some(n_lower) = &name_query_lower {
+                          return item.narrators.iter().any(|a| a.name.to_lowercase().contains(n_lower));
+                      }
+                  } else if type_query == Some(&ItemType::Genres) {
+                      if let Some(n_lower) = &name_query_lower {
+                          return item.genres.iter().any(|g| g.to_lowercase().contains(n_lower)) || item.tags.iter().any(|t| t.to_lowercase().contains(n_lower));
+                      }
+                  } else if type_query == Some(&ItemType::Series) {
+                       if let Some(n_lower) = &name_query_lower {
+                          return item.series.iter().any(|s| s.to_lowercase().contains(n_lower));
+                      }
+                  } else {
+                       if !search_term_lower.is_empty() {
+                          return item.matches_search(&search_term_lower);
+                       }
+                  }
+                  true
+              }).collect();
+          }
 
-         if let Some(author) = &query.author {
-             let re = regex::RegexBuilder::new(&regex::escape(author)).case_insensitive(true).build()?;
-             parsed_items = parsed_items.into_par_iter().filter(|item| item.authors.iter().any(|a| re.is_match(&a.name))).collect();
-         }
+          if let Some(author) = &query.author {
+              let author_lower = author.to_lowercase();
+              parsed_items = parsed_items.into_par_iter().filter(|item| item.authors.iter().any(|a| a.name.to_lowercase().contains(&author_lower))).collect();
+          }
 
-         if let Some(title) = &query.title {
-             let re = regex::RegexBuilder::new(&regex::escape(title)).case_insensitive(true).build()?;
-             parsed_items = parsed_items.into_par_iter().filter(|item| item.title.as_deref().map_or(false, |t| re.is_match(t)) || item.subtitle.as_deref().map_or(false, |t| re.is_match(t))).collect();
-         }
+          if let Some(title) = &query.title {
+              let title_lower = title.to_lowercase();
+              parsed_items = parsed_items.into_par_iter().filter(|item| item.title.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower)) || item.subtitle.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower))).collect();
+          }
 
          let total_items = parsed_items.len();
          let page_size = self.config.opds_page_size;

@@ -7,7 +7,7 @@ use base64::{engine::general_purpose, Engine as _};
 use std::sync::Arc;
 use tracing::{debug, error};
 
-use crate::{models::InternalUser, AppState, api::AbsClient};
+use crate::{models::InternalUser, AppState};
 
 pub struct AuthUser(pub InternalUser);
 
