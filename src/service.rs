@@ -2,7 +2,7 @@ use crate::api::AbsClient;
 use crate::models::{Library, LibraryItem, InternalUser, ItemType, AppConfig};
 use crate::i18n::I18n;
 use crate::xml::OpdsBuilder;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::collections::{HashSet, HashMap};
 use unicode_normalization::UnicodeNormalization;
 use anyhow::Result;
@@ -52,85 +52,122 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
     ) -> Result<(Vec<LibraryItem>, usize)> {
         let items_data = self.client.get_items(user, library_id).await?;
 
-        let mut parsed_items: Vec<LibraryItem> = items_data.results.into_par_iter().filter_map(|item| {
-             let format = item.media.ebook_format;
-             if format.is_some() || self.config.show_audiobooks {
-                 Some(LibraryItem {
-                     id: item.id,
-                     title: item.media.metadata.title,
-                     subtitle: item.media.metadata.subtitle,
-                     description: item.media.metadata.description,
-                     genres: item.media.metadata.genres.unwrap_or_default(),
-                     tags: item.media.metadata.tags.unwrap_or_default(),
-                     publisher: item.media.metadata.publisher,
-                     isbn: item.media.metadata.isbn,
-                     language: item.media.metadata.language,
-                     published_year: item.media.metadata.published_year,
-                     authors: item.media.metadata.author_name.map(|s| s.split(',').map(|n| crate::models::Author { name: n.trim().to_string() }).collect()).unwrap_or_default(),
-                     narrators: item.media.metadata.narrator_name.map(|s| s.split(',').map(|n| crate::models::Author { name: n.trim().to_string() }).collect()).unwrap_or_default(),
-                     series: item.media.metadata.series_name.map(|s| {
-                         static SERIES_CLEANUP_RE: OnceLock<regex::Regex> = OnceLock::new();
-                         let re = SERIES_CLEANUP_RE.get_or_init(|| regex::Regex::new(r"#.*$").unwrap());
-                         s.split(',').map(|n| n.trim().replace(re.as_str(), "").trim().to_string()).collect()
+        let filtered_items: Vec<&crate::models::AbsItemResult> = items_data.results.par_iter().filter(|item| {
+             let format = item.media.ebook_format.as_deref();
+             if format.is_none() && !self.config.show_audiobooks {
+                 return false;
+             }
+
+             if query.q.is_some() || query.type_.is_some() {
+                 let search_term_lower = query.q.as_deref().unwrap_or("").to_lowercase();
+                 let type_query = query.type_.as_ref();
+                 let name_query_lower = query.name.as_deref().map(|n| n.to_lowercase());
+
+                 let matches = if type_query == Some(&ItemType::Authors) {
+                     if let Some(n_lower) = &name_query_lower {
+                         author_matches(item.media.metadata.author_name.as_deref(), n_lower)
+                     } else {
+                         true
+                     }
+                 } else if type_query == Some(&ItemType::Narrators) {
+                     if let Some(n_lower) = &name_query_lower {
+                         author_matches(item.media.metadata.narrator_name.as_deref(), n_lower)
+                     } else {
+                         true
+                     }
+                 } else if type_query == Some(&ItemType::Genres) {
+                     if let Some(n_lower) = &name_query_lower {
+                         let g_match = item.media.metadata.genres.as_ref().map_or(false, |genres| {
+                             genres.iter().any(|g| g.to_lowercase().contains(n_lower))
+                         });
+                         let t_match = item.media.metadata.tags.as_ref().map_or(false, |tags| {
+                             tags.iter().any(|t| t.to_lowercase().contains(n_lower))
+                         });
+                         g_match || t_match
+                     } else {
+                         true
+                     }
+                 } else if type_query == Some(&ItemType::Series) {
+                     if let Some(n_lower) = &name_query_lower {
+                         clean_series(item.media.metadata.series_name.as_deref(), n_lower)
+                     } else {
+                         true
+                     }
+                 } else {
+                     if !search_term_lower.is_empty() {
+                         matches_search_abs(&item.media.metadata, &search_term_lower)
+                     } else {
+                         true
+                     }
+                 };
+
+                 if !matches {
+                     return false;
+                 }
+             }
+
+             if let Some(author) = &query.author {
+                 let author_lower = author.to_lowercase();
+                 if !author_matches(item.media.metadata.author_name.as_deref(), &author_lower) {
+                     return false;
+                 }
+             }
+
+             if let Some(title) = &query.title {
+                 let title_lower = title.to_lowercase();
+                 let title_match = item.media.metadata.title.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower)) ||
+                     item.media.metadata.subtitle.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower));
+                 if !title_match {
+                     return false;
+                 }
+             }
+
+             true
+        }).collect();
+
+        let total_items = filtered_items.len();
+        let page_size = self.config.opds_page_size;
+        let start_index = query.page * page_size;
+
+        if start_index < total_items {
+             let end_index = std::cmp::min(start_index + page_size, total_items);
+             let paginated_refs = &filtered_items[start_index..end_index];
+             let mapped_items: Vec<LibraryItem> = paginated_refs.iter().map(|item| {
+                 let format = item.media.ebook_format.clone();
+                 LibraryItem {
+                     id: item.id.clone(),
+                     title: item.media.metadata.title.clone(),
+                     subtitle: item.media.metadata.subtitle.clone(),
+                     description: item.media.metadata.description.clone(),
+                     genres: item.media.metadata.genres.clone().unwrap_or_default(),
+                     tags: item.media.metadata.tags.clone().unwrap_or_default(),
+                     publisher: item.media.metadata.publisher.clone(),
+                     isbn: item.media.metadata.isbn.clone(),
+                     language: item.media.metadata.language.clone(),
+                     published_year: item.media.metadata.published_year.clone(),
+                     authors: item.media.metadata.author_name.as_deref().map(|s| {
+                         s.split(',').map(|n| crate::models::Author { name: n.trim().to_string() }).collect()
+                     }).unwrap_or_default(),
+                     narrators: item.media.metadata.narrator_name.as_deref().map(|s| {
+                         s.split(',').map(|n| crate::models::Author { name: n.trim().to_string() }).collect()
+                     }).unwrap_or_default(),
+                     series: item.media.metadata.series_name.as_deref().map(|s| {
+                         s.split(',').map(|n| {
+                             let cleaned = if let Some(idx) = n.find('#') {
+                                 n[..idx].trim()
+                             } else {
+                                 n.trim()
+                             };
+                             cleaned.to_string()
+                         }).collect()
                      }).unwrap_or_default(),
                      format,
-                 })
-             } else {
-                 None
-             }
-         }).collect();
-
-         if query.q.is_some() || query.type_.is_some() {
-              let search_term_lower = query.q.as_deref().unwrap_or("").to_lowercase();
-              let type_query = query.type_.as_ref();
-              let name_query_lower = query.name.as_deref().map(|n| n.to_lowercase());
-
-              parsed_items = parsed_items.into_par_iter().filter(|item| {
-                  if type_query == Some(&ItemType::Authors) {
-                      if let Some(n_lower) = &name_query_lower {
-                          return item.authors.iter().any(|a| a.name.to_lowercase().contains(n_lower));
-                      }
-                  } else if type_query == Some(&ItemType::Narrators) {
-                       if let Some(n_lower) = &name_query_lower {
-                          return item.narrators.iter().any(|a| a.name.to_lowercase().contains(n_lower));
-                      }
-                  } else if type_query == Some(&ItemType::Genres) {
-                      if let Some(n_lower) = &name_query_lower {
-                          return item.genres.iter().any(|g| g.to_lowercase().contains(n_lower)) || item.tags.iter().any(|t| t.to_lowercase().contains(n_lower));
-                      }
-                  } else if type_query == Some(&ItemType::Series) {
-                       if let Some(n_lower) = &name_query_lower {
-                          return item.series.iter().any(|s| s.to_lowercase().contains(n_lower));
-                      }
-                  } else {
-                       if !search_term_lower.is_empty() {
-                          return item.matches_search(&search_term_lower);
-                       }
-                  }
-                  true
-              }).collect();
-          }
-
-          if let Some(author) = &query.author {
-              let author_lower = author.to_lowercase();
-              parsed_items = parsed_items.into_par_iter().filter(|item| item.authors.iter().any(|a| a.name.to_lowercase().contains(&author_lower))).collect();
-          }
-
-          if let Some(title) = &query.title {
-              let title_lower = title.to_lowercase();
-              parsed_items = parsed_items.into_par_iter().filter(|item| item.title.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower)) || item.subtitle.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower))).collect();
-          }
-
-         let total_items = parsed_items.len();
-         let page_size = self.config.opds_page_size;
-         let start_index = query.page * page_size;
-
-         if start_index < total_items {
-             let end_index = std::cmp::min(start_index + page_size, total_items);
-             Ok((parsed_items[start_index..end_index].to_vec(), total_items))
-         } else {
+                 }
+             }).collect();
+             Ok((mapped_items, total_items))
+        } else {
              Ok((vec![], total_items))
-         }
+        }
     }
 
     pub async fn get_categories(
@@ -140,7 +177,6 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
         type_: &str,
         query: &crate::handlers::LibraryQuery,
     ) -> Result<String> {
-        // Logic from get_category handler
          let updated_time = chrono::Utc::now().to_rfc3339();
          let items_data = self.client.get_items(user, library_id).await?;
          let lib_data = self.client.get_library(user, library_id).await?;
@@ -156,95 +192,175 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                  match type_ {
                      "authors" => {
                          if let Some(names) = item.media.metadata.author_name {
-                             for name in names.split(',') { acc.insert(name.trim().to_string()); }
+                             for name in names.split(',') {
+                                 let trimmed = name.trim();
+                                 if !acc.contains(trimmed) {
+                                     acc.insert(trimmed.to_string());
+                                 }
+                             }
                          }
                      },
                      "narrators" => {
                           if let Some(names) = item.media.metadata.narrator_name {
-                             for name in names.split(',') { acc.insert(name.trim().to_string()); }
+                             for name in names.split(',') {
+                                 let trimmed = name.trim();
+                                 if !acc.contains(trimmed) {
+                                     acc.insert(trimmed.to_string());
+                                 }
+                             }
                          }
                      },
                      "genres" => {
                          if let Some(genres) = item.media.metadata.genres {
-                             for g in genres { acc.insert(g.trim().to_string()); }
+                             for g in genres {
+                                 let trimmed = g.trim();
+                                 if !acc.contains(trimmed) {
+                                     acc.insert(trimmed.to_string());
+                                 }
+                             }
                          }
                          if let Some(tags) = item.media.metadata.tags {
-                             for t in tags { acc.insert(t.trim().to_string()); }
+                             for t in tags {
+                                 let trimmed = t.trim();
+                                 if !acc.contains(trimmed) {
+                                     acc.insert(trimmed.to_string());
+                                 }
+                             }
                          }
                      },
                      "series" => {
                           if let Some(series) = item.media.metadata.series_name {
-                             for s in series.split(',') { acc.insert(s.trim().to_string()); }
+                             for s in series.split(',') {
+                                 let trimmed = s.trim();
+                                 if !acc.contains(trimmed) {
+                                     acc.insert(trimmed.to_string());
+                                 }
+                             }
                          }
                      },
                      _ => {}
                  }
                  acc
              })
-             .reduce(HashSet::new, |mut a, b| {
-                 for item in b {
-                     a.insert(item);
+             .reduce(HashSet::new, |mut a, mut b| {
+                 if a.len() < b.len() {
+                     for item in a {
+                         b.insert(item);
+                     }
+                     b
+                 } else {
+                     for item in b {
+                         a.insert(item);
+                     }
+                     a
                  }
-                 a
              });
 
-         let mut distinct_type_array: Vec<String> = distinct_type.into_iter().collect();
-         distinct_type_array.sort();
-
          if query.start.is_none() && self.config.show_char_cards {
-              let mut count_by_start: HashMap<String, usize> = HashMap::new();
-              for item in &distinct_type_array {
-                  let start_char = item.chars().next().unwrap_or(' ').to_uppercase().to_string();
-                  let normalized = start_char.nfd().filter(|c| !crate::xml::is_combining_mark(*c)).collect::<String>();
-                  let key = if normalized >= "A".to_string() && normalized <= "Z".to_string() { normalized } else { String::new() };
-                  if !key.is_empty() {
-                       *count_by_start.entry(key).or_insert(0) += 1;
-                  }
-              }
+               let mut distinct_type_array: Vec<String> = distinct_type.into_iter().collect();
+               distinct_type_array.sort_unstable();
 
-              let mut keys: Vec<String> = count_by_start.keys().cloned().collect();
-              keys.sort();
+               let mut count_by_start: HashMap<String, usize> = HashMap::new();
+               for item in &distinct_type_array {
+                   let start_char = item.chars().next().unwrap_or(' ').to_uppercase().to_string();
+                   let normalized = start_char.nfd().filter(|c| !crate::xml::is_combining_mark(*c)).collect::<String>();
+                   let key = if normalized >= "A".to_string() && normalized <= "Z".to_string() { normalized } else { String::new() };
+                   if !key.is_empty() {
+                        *count_by_start.entry(key).or_insert(0) += 1;
+                   }
+               }
 
-               OpdsBuilder::build_opds_skeleton(
-                     &format!("urn:uuid:{}", library_id),
-                     &library.name,
-                     |writer| {
-                         for letter in keys {
-                             let count = count_by_start[&letter];
-                             let title = format!("{} ({})", letter, count);
-                             let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
-                             OpdsBuilder::build_custom_card_entry(writer, &title, &link, &updated_time)?;
-                         }
-                         Ok(())
-                     },
-                     None,
-                     None,
-                     None,
-                     &format!("/opds/libraries/{}/{}", library_id, type_)
-                 ).map_err(|e| e.into())
+               let mut keys: Vec<String> = count_by_start.keys().cloned().collect();
+               keys.sort();
+
+                OpdsBuilder::build_opds_skeleton(
+                      &format!("urn:uuid:{}", library_id),
+                      &library.name,
+                      |writer| {
+                          let mut url_buf = String::with_capacity(256);
+                          for letter in keys {
+                              let count = count_by_start[&letter];
+                              let title = format!("{} ({})", letter, count);
+                              let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
+                              OpdsBuilder::build_custom_card_entry(writer, &title, &link, &updated_time, &mut url_buf)?;
+                          }
+                          Ok(())
+                      },
+                      None,
+                      None,
+                      None,
+                      &format!("/opds/libraries/{}/{}", library_id, type_)
+                  ).map_err(|e| e.into())
          } else {
-             if let Some(start) = &query.start {
-                 distinct_type_array.retain(|item| {
-                      let start_char = item.chars().next().unwrap_or(' ').to_lowercase().to_string();
-                       let normalized = start_char.nfd().filter(|c| !crate::xml::is_combining_mark(*c)).collect::<String>();
-                       normalized == *start
-                 });
-             }
+             let mut distinct_type_array: Vec<String> = if let Some(start) = &query.start {
+                 distinct_type.into_iter()
+                     .filter(|item| {
+                          let start_char = item.chars().next().unwrap_or(' ').to_lowercase().to_string();
+                          let normalized = start_char.nfd().filter(|c| !crate::xml::is_combining_mark(*c)).collect::<String>();
+                          normalized == *start
+                     })
+                     .collect()
+             } else {
+                 distinct_type.into_iter().collect()
+             };
+             distinct_type_array.sort_unstable();
 
-               OpdsBuilder::build_opds_skeleton(
-                  &format!("urn:uuid:{}", library_id),
-                  &library.name,
-                  |writer| {
-                      for item in distinct_type_array {
-                          OpdsBuilder::build_card_entry(writer, &item, &type_, &library_id, &updated_time)?;
-                      }
-                      Ok(())
-                  },
-                 None,
-                 None,
-                 None,
-                 &format!("/opds/libraries/{}/{}", library_id, type_)
-             ).map_err(|e| e.into())
+                OpdsBuilder::build_opds_skeleton(
+                   &format!("urn:uuid:{}", library_id),
+                   &library.name,
+                   |writer| {
+                       let mut url_buf = String::with_capacity(256);
+                       for item in distinct_type_array {
+                           OpdsBuilder::build_card_entry(writer, &item, &type_, &library_id, &updated_time, &mut url_buf)?;
+                       }
+                       Ok(())
+                   },
+                  None,
+                  None,
+                  None,
+                  &format!("/opds/libraries/{}/{}", library_id, type_)
+              ).map_err(|e| e.into())
          }
     }
+}
+
+fn author_matches(author_name: Option<&str>, term: &str) -> bool {
+    author_name.map_or(false, |s| {
+        s.split(',').any(|n| n.trim().to_lowercase().contains(term))
+    })
+}
+
+fn clean_series(series_name: Option<&str>, term: &str) -> bool {
+    series_name.map_or(false, |s| {
+        s.split(',').any(|n| {
+            let cleaned = if let Some(idx) = n.find('#') {
+                n[..idx].trim()
+            } else {
+                n.trim()
+            };
+            cleaned.to_lowercase().contains(term)
+        })
+    })
+}
+
+fn matches_search_abs(metadata: &crate::models::AbsMetadata, term: &str) -> bool {
+    if term.is_empty() {
+        return true;
+    }
+    metadata.title.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.subtitle.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.description.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.publisher.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.isbn.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.language.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.published_year.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.author_name.as_deref().map_or(false, |s| {
+        s.split(',').any(|n| n.trim().to_lowercase().contains(term))
+    }) ||
+    metadata.genres.as_ref().map_or(false, |genres| {
+        genres.iter().any(|g| g.to_lowercase().contains(term))
+    }) ||
+    metadata.tags.as_ref().map_or(false, |tags| {
+        tags.iter().any(|t| t.to_lowercase().contains(term))
+    })
 }

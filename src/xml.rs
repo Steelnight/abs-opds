@@ -173,30 +173,63 @@ impl OpdsBuilder {
         }
     }
 
-    pub fn build_card_entry(writer: &mut Writer<Cursor<Vec<u8>>>, item: &str, type_: &str, library_id: &str, updated_time: &str) -> Result<(), quick_xml::Error> {
+    pub fn build_card_entry(
+        writer: &mut Writer<Cursor<Vec<u8>>>,
+        item: &str,
+        type_: &str,
+        library_id: &str,
+        updated_time: &str,
+        url_buf: &mut String,
+    ) -> Result<(), quick_xml::Error> {
         writer.write_event(Event::Start(BytesStart::new("entry")))?;
 
-        let id = item.to_lowercase().replace(" ", "-");
-        Self::write_elem(writer, "id", &id)?;
+        url_buf.clear();
+        for c in item.chars() {
+            if c == ' ' {
+                url_buf.push('-');
+            } else {
+                for lc in c.to_lowercase() {
+                    url_buf.push(lc);
+                }
+            }
+        }
+        Self::write_elem(writer, "id", url_buf)?;
         Self::write_elem(writer, "title", item)?;
         Self::write_elem(writer, "updated", updated_time)?;
 
-        let href = format!("/opds/libraries/{}?name={}&type={}", library_id, item, type_);
-         Self::write_link(writer, "subsection", "application/atom+xml;profile=opds-catalog", "", &href)?;
+        url_buf.clear();
+        use std::fmt::Write as _;
+        let _ = write!(url_buf, "/opds/libraries/{}?name={}&type={}", library_id, item, type_);
+        Self::write_link(writer, "subsection", "application/atom+xml;profile=opds-catalog", "", url_buf)?;
 
         writer.write_event(Event::End(BytesEnd::new("entry")))?;
         Ok(())
     }
 
-    pub fn build_custom_card_entry(writer: &mut Writer<Cursor<Vec<u8>>>, item: &str, link: &str, updated_time: &str) -> Result<(), quick_xml::Error> {
+    pub fn build_custom_card_entry(
+        writer: &mut Writer<Cursor<Vec<u8>>>,
+        item: &str,
+        link: &str,
+        updated_time: &str,
+        url_buf: &mut String,
+    ) -> Result<(), quick_xml::Error> {
         writer.write_event(Event::Start(BytesStart::new("entry")))?;
 
-        let id = item.to_lowercase().replace(" ", "-");
-        Self::write_elem(writer, "id", &id)?;
+        url_buf.clear();
+        for c in item.chars() {
+            if c == ' ' {
+                url_buf.push('-');
+            } else {
+                for lc in c.to_lowercase() {
+                    url_buf.push(lc);
+                }
+            }
+        }
+        Self::write_elem(writer, "id", url_buf)?;
         Self::write_elem(writer, "title", item)?;
         Self::write_elem(writer, "updated", updated_time)?;
 
-         Self::write_link(writer, "subsection", "application/atom+xml;profile=opds-catalog", "", link)?;
+        Self::write_link(writer, "subsection", "application/atom+xml;profile=opds-catalog", "", link)?;
 
         writer.write_event(Event::End(BytesEnd::new("entry")))?;
         Ok(())
