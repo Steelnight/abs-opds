@@ -188,9 +188,9 @@ impl AppConfig {
                 ));
             }
             users.push(InternalUser {
-                name: parts[0].to_string(),
-                api_key: parts[1].to_string(),
-                password: Some(parts[2].to_string()),
+                name: parts[0].trim().to_string(),
+                api_key: parts[1].trim().to_string(),
+                password: Some(parts[2].trim().to_string()),
             });
         }
         self.internal_users = users;

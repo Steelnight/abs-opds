@@ -31,6 +31,7 @@ pub struct AppState {
     pub i18n: I18n,
     pub api_client_raw: reqwest::Client,
     pub service: LibraryService<dyn AbsClient + Send + Sync>,
+    pub anonymous_user: tokio::sync::RwLock<Option<(crate::models::InternalUser, tokio::time::Instant)>>,
 }
 
 pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
@@ -48,6 +49,7 @@ pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
         i18n,
         api_client_raw,
         service,
+        anonymous_user: tokio::sync::RwLock::new(None),
     })
 }
 
@@ -66,6 +68,7 @@ pub async fn build_app_state_with_mock(
         i18n,
         api_client_raw,
         service,
+        anonymous_user: tokio::sync::RwLock::new(None),
     })
 }
 

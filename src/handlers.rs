@@ -66,7 +66,8 @@ pub async fn get_opds_root(
         }
         Err(e) => {
             tracing::error!("Failed to fetch libraries: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch libraries").into_response()
+            let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch libraries: {}", e)).unwrap_or_default();
+            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
         }
     }
 }
@@ -136,13 +137,15 @@ pub async fn get_library(
                 },
                 Err(e) => {
                     tracing::error!("Failed to filter items: {}", e);
-                    (StatusCode::INTERNAL_SERVER_ERROR, "Failed to process items").into_response()
+                    let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to filter items: {}", e)).unwrap_or_default();
+                    ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
                 }
             }
         },
         Err(e) => {
             tracing::error!("Failed to fetch library: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch library").into_response()
+            let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch library: {}", e)).unwrap_or_default();
+            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
         }
     }
 }
@@ -162,7 +165,8 @@ pub async fn get_category(
         Ok(xml) => ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response(),
         Err(e) => {
             tracing::error!("Failed to fetch category items: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to fetch category items").into_response()
+            let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch category items: {}", e)).unwrap_or_default();
+            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
         }
     }
 }
@@ -174,7 +178,8 @@ pub async fn search_definition(
         Ok(xml) => ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response(),
         Err(e) => {
             tracing::error!("Failed to build search definition: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to build search definition").into_response()
+            let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to build search definition: {}", e)).unwrap_or_default();
+            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
         }
     }
 }

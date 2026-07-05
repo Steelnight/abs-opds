@@ -26,12 +26,33 @@ where
         // 1. Check OPDS_NO_AUTH
         if state.config.opds_no_auth {
             if !state.config.abs_noauth_username.is_empty() && !state.config.abs_noauth_password.is_empty() {
+                // Check local cached anonymous user
+                {
+                    let cache = state.anonymous_user.read().await;
+                    if let Some((user, expires)) = &*cache {
+                        if tokio::time::Instant::now() < *expires {
+                            return Ok(AuthUser(user.clone()));
+                        }
+                    }
+                }
+                // Acquire write lock and refresh
+                let mut cache = state.anonymous_user.write().await;
+                // Double check in case another thread populated it while we waited for write lock
+                if let Some((user, expires)) = &*cache {
+                    if tokio::time::Instant::now() < *expires {
+                        return Ok(AuthUser(user.clone()));
+                    }
+                }
                 match state
                     .api_client
                     .login(&state.config.abs_noauth_username, &state.config.abs_noauth_password)
                     .await
                 {
-                    Ok(user) => return Ok(AuthUser(user)),
+                    Ok(user) => {
+                        let expires = tokio::time::Instant::now() + std::time::Duration::from_secs(500); // 500s (<10min TTL)
+                        *cache = Some((user.clone(), expires));
+                        return Ok(AuthUser(user));
+                    }
                     Err(e) => {
                         error!("Auto-login failed for default user: {}", e);
                         return Err((StatusCode::UNAUTHORIZED, format!("Authentication failed: {}", e))

@@ -58,8 +58,12 @@ impl OpdsBuilder {
                 Self::write_elem_ns(&mut writer, "opensearch:startIndex", &start_index.to_string())?;
                 Self::write_elem_ns(&mut writer, "opensearch:itemsPerPage", &page_size.to_string())?;
 
+                 static PAGE_REGEX: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+                 let regex = PAGE_REGEX.get_or_init(|| {
+                     regex::Regex::new(r"[?&]page=\d+").expect("Failed to compile regex")
+                 });
                  let clean_url = if url_base.contains("?page=") || url_base.contains("&page=") {
-                     regex::Regex::new(r"[?&]page=\d+").expect("Failed to compile regex").replace(url_base, "").to_string()
+                     regex.replace(url_base, "").to_string()
                  } else {
                      url_base.to_string()
                  };
@@ -98,14 +102,14 @@ impl OpdsBuilder {
 
     fn write_elem(writer: &mut Writer<Cursor<Vec<u8>>>, name: &str, value: &str) -> Result<(), quick_xml::Error> {
         writer.write_event(Event::Start(BytesStart::new(name)))?;
-        writer.write_event(Event::Text(quick_xml::events::BytesText::new(value)))?;
+        writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(quick_xml::escape::escape(value))))?;
         writer.write_event(Event::End(BytesEnd::new(name)))?;
         Ok(())
     }
 
      fn write_elem_ns(writer: &mut Writer<Cursor<Vec<u8>>>, name: &str, value: &str) -> Result<(), quick_xml::Error> {
         writer.write_event(Event::Start(BytesStart::new(name)))?;
-        writer.write_event(Event::Text(quick_xml::events::BytesText::new(value)))?;
+        writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(quick_xml::escape::escape(value))))?;
         writer.write_event(Event::End(BytesEnd::new(name)))?;
         Ok(())
     }
@@ -331,7 +335,35 @@ impl OpdsBuilder {
 
         writer.write_event(Event::Empty(url))?;
 
-        writer.write_event(Event::End(BytesEnd::new("OpenSearchDescription")))?;
+         writer.write_event(Event::End(BytesEnd::new("OpenSearchDescription")))?;
+         Ok(String::from_utf8(writer.into_inner().into_inner()).unwrap_or_default())
+      }
+
+     pub fn build_error_feed(error_msg: &str) -> Result<String, quick_xml::Error> {
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+        writer.write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))?;
+
+        let mut feed = BytesStart::new("feed");
+        feed.push_attribute(("xmlns", "http://www.w3.org/2005/Atom"));
+        writer.write_event(Event::Start(feed))?;
+
+        Self::write_elem(&mut writer, "id", "urn:abs-opds:error")?;
+        Self::write_elem(&mut writer, "title", &format!("Error: {}", error_msg))?;
+        Self::write_elem(&mut writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+
+        writer.write_event(Event::Start(BytesStart::new("entry")))?;
+        Self::write_elem(&mut writer, "id", "urn:abs-opds:error:detail")?;
+        Self::write_elem(&mut writer, "title", error_msg)?;
+        Self::write_elem(&mut writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+        
+        let mut content = BytesStart::new("content");
+        content.push_attribute(("type", "text"));
+        writer.write_event(Event::Start(content))?;
+        writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(quick_xml::escape::escape(error_msg))))?;
+        writer.write_event(Event::End(BytesEnd::new("content")))?;
+        writer.write_event(Event::End(BytesEnd::new("entry")))?;
+
+        writer.write_event(Event::End(BytesEnd::new("feed")))?;
         Ok(String::from_utf8(writer.into_inner().into_inner()).unwrap_or_default())
      }
 }

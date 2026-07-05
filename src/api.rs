@@ -21,10 +21,17 @@ struct CachedSession {
 }
 
 #[derive(Clone)]
+struct CachedItems {
+    response: AbsItemsResponse,
+    expires: Instant,
+}
+
+#[derive(Clone)]
 pub struct ApiClient {
     base_url: String,
     client: Client,
     token_cache: Arc<RwLock<HashMap<String, CachedSession>>>,
+    items_cache: Arc<RwLock<HashMap<String, CachedItems>>>,
     cache_ttl: Duration,
 }
 
@@ -34,6 +41,7 @@ impl ApiClient {
             base_url,
             client: Client::new(),
             token_cache: Arc::new(RwLock::new(HashMap::new())),
+            items_cache: Arc::new(RwLock::new(HashMap::new())),
             cache_ttl: Duration::from_secs(600), // 10 minutes
         }
     }
@@ -71,12 +79,15 @@ impl AbsClient for ApiClient {
                     let data = response.json::<AbsLoginResponse>().await?;
                     {
                         let mut cache = self.token_cache.write().unwrap();
+                        let now = Instant::now();
+                        // Suggestion 9: Evict expired sessions to prevent memory leaks
+                        cache.retain(|_, session| now < session.expires);
                         cache.insert(
                             username.to_string(),
                             CachedSession {
                                 token: data.user.access_token.clone(),
                                 password_hash: incoming_hash,
-                                expires: Instant::now() + self.cache_ttl,
+                                expires: now + self.cache_ttl,
                             },
                         );
                     }
@@ -127,6 +138,16 @@ impl AbsClient for ApiClient {
     }
 
     async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse> {
+        let cache_key = format!("{}:{}", user.api_key, library_id);
+        {
+            let cache = self.items_cache.read().unwrap();
+            if let Some(cached) = cache.get(&cache_key) {
+                if Instant::now() < cached.expires {
+                    return Ok(cached.response.clone());
+                }
+            }
+        }
+
         let url = format!("{}/api/libraries/{}/items", self.base_url, library_id);
         let response = self
             .client
@@ -139,6 +160,19 @@ impl AbsClient for ApiClient {
             return Err(anyhow::anyhow!("Failed to fetch library items: status {}", response.status()));
         }
 
-        Ok(response.json::<AbsItemsResponse>().await?)
+        let data = response.json::<AbsItemsResponse>().await?;
+        {
+            let mut cache = self.items_cache.write().unwrap();
+            let now = Instant::now();
+            cache.retain(|_, cached| now < cached.expires);
+            cache.insert(
+                cache_key,
+                CachedItems {
+                    response: data.clone(),
+                    expires: now + Duration::from_secs(60), // Cache for 60 seconds
+                },
+            );
+        }
+        Ok(data)
     }
 }
