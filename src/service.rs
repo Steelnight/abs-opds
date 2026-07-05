@@ -195,7 +195,8 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                        None,
                        None,
                        None,
-                       &format!("/opds/libraries/{}/{}", library_id, type_)
+                       &format!("/opds/libraries/{}/{}", library_id, type_),
+                       false,
                    ).map_err(|e| e.into())
          } else {
              let mut distinct_type_array: Vec<String> = if let Some(start) = &query.start {
@@ -242,7 +243,8 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                    Some(&library),
                    Some(user),
                    page_info,
-                   &url_base
+                   &url_base,
+                   false,
                ).map_err(|e| e.into())
          }
     }

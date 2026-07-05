@@ -43,7 +43,8 @@ pub async fn get_opds_root(
                      None,
                      None,
                      None,
-                     &format!("/opds/libraries/{}", library_id)
+                     &format!("/opds/libraries/{}", library_id),
+                     false,
                  ).unwrap_or_else(|_| String::new());
 
                  let etag = {
@@ -59,7 +60,7 @@ pub async fn get_opds_root(
                  let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
                  return (
                      [
-                         (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                         (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/atom+xml;profile=opds-catalog;kind=navigation")),
                          (axum::http::header::ETAG, etag_value),
                      ],
                      xml,
@@ -77,9 +78,10 @@ pub async fn get_opds_root(
                 None,
                 Some(&user),
                 None,
-                "/opds"
+                "/opds",
+                false,
             ).unwrap_or_else(|_| String::new());
-
+ 
             let etag = {
                 let mut hasher = Sha1::new();
                 hasher.update(xml.as_bytes());
@@ -93,7 +95,7 @@ pub async fn get_opds_root(
             let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
             return (
                 [
-                    (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                    (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/atom+xml;profile=opds-catalog;kind=navigation")),
                     (axum::http::header::ETAG, etag_value),
                 ],
                 xml,
@@ -102,7 +104,7 @@ pub async fn get_opds_root(
         Err(e) => {
             tracing::error!("Failed to fetch libraries: {}", e);
             let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch libraries: {}", e)).unwrap_or_default();
-            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
+            ([(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")], error_xml).into_response()
         }
     }
 }
@@ -125,7 +127,8 @@ pub async fn get_library(
               None,
               None,
               None,
-              &format!("/opds/libraries/{}", library_id)
+              &format!("/opds/libraries/{}", library_id),
+              false,
           ).unwrap_or_else(|_| String::new());
 
           let etag = {
@@ -141,7 +144,7 @@ pub async fn get_library(
           let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
           return (
               [
-                  (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                  (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/atom+xml;profile=opds-catalog;kind=navigation")),
                   (axum::http::header::ETAG, etag_value),
               ],
               xml,
@@ -183,7 +186,8 @@ pub async fn get_library(
                         Some(&library),
                         Some(&user),
                         Some((query.page, page_size, total_items, total_pages)),
-                        &url_base
+                        &url_base,
+                        true,
                     ).unwrap_or_else(|_| String::new());
 
                     let etag = {
@@ -200,7 +204,7 @@ pub async fn get_library(
                     let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
                     (
                         [
-                            (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                            (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/atom+xml;profile=opds-catalog;kind=acquisition")),
                             (axum::http::header::ETAG, etag_value),
                         ],
                         xml,
@@ -209,14 +213,14 @@ pub async fn get_library(
                 Err(e) => {
                     tracing::error!("Failed to filter items: {}", e);
                     let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to filter items: {}", e)).unwrap_or_default();
-                    ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
+                    ([(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")], error_xml).into_response()
                 }
             }
         },
         Err(e) => {
             tracing::error!("Failed to fetch library: {}", e);
             let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch library: {}", e)).unwrap_or_default();
-            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
+            ([(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")], error_xml).into_response()
         }
     }
 }
@@ -248,7 +252,7 @@ pub async fn get_category(
             let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
             (
                 [
-                    (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                    (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/atom+xml;profile=opds-catalog;kind=navigation")),
                     (axum::http::header::ETAG, etag_value),
                 ],
                 xml,
@@ -257,7 +261,7 @@ pub async fn get_category(
         Err(e) => {
             tracing::error!("Failed to fetch category items: {}", e);
             let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch category items: {}", e)).unwrap_or_default();
-            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
+            ([(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")], error_xml).into_response()
         }
     }
 }
@@ -266,11 +270,11 @@ pub async fn search_definition(
     Path(library_id): Path<String>,
 ) -> Response {
     match OpdsBuilder::build_search_definition(&library_id) {
-        Ok(xml) => ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response(),
+        Ok(xml) => ([(axum::http::header::CONTENT_TYPE, "application/opensearchdescription+xml")], xml).into_response(),
         Err(e) => {
             tracing::error!("Failed to build search definition: {}", e);
             let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to build search definition: {}", e)).unwrap_or_default();
-            ([(axum::http::header::CONTENT_TYPE, "application/xml")], error_xml).into_response()
+            ([(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")], error_xml).into_response()
         }
     }
 }

@@ -19,6 +19,7 @@ impl OpdsBuilder {
         _user: Option<&InternalUser>,
         page_info: Option<(usize, usize, usize, usize)>,
         url_base: &str,
+        is_acquisition: bool,
     ) -> Result<String, quick_xml::Error>
     where
         F: FnOnce(&mut Writer<Cursor<Vec<u8>>>) -> Result<(), quick_xml::Error>,
@@ -37,6 +38,11 @@ impl OpdsBuilder {
         Self::write_elem(&mut writer, "id", id)?;
         Self::write_elem(&mut writer, "title", title)?;
 
+        // Feed-level author is required by Atom when entries might lack one
+        writer.write_event(Event::Start(BytesStart::new("author")))?;
+        Self::write_elem(&mut writer, "name", "ABS-OPDS")?;
+        writer.write_event(Event::End(BytesEnd::new("author")))?;
+
         writer.write_event(Event::Start(BytesStart::new("authentication")))?;
         Self::write_elem(&mut writer, "type", "http://opds-spec.org/auth/basic")?;
         writer.write_event(Event::Start(BytesStart::new("labels")))?;
@@ -47,10 +53,14 @@ impl OpdsBuilder {
 
         Self::write_elem(&mut writer, "updated", &chrono::Utc::now().to_rfc3339())?;
 
+        let feed_kind = if is_acquisition { "acquisition" } else { "navigation" };
+        let feed_profile = format!("application/atom+xml;profile=opds-catalog;kind={}", feed_kind);
+        Self::write_link(&mut writer, "self", &feed_profile, "", url_base)?;
+
         if let Some(lib) = library {
             Self::write_link(&mut writer, "alternate", "text/html", "Web Interface", &format!("/library/{}", lib.id))?;
             Self::write_link(&mut writer, "search", "application/opensearchdescription+xml", "Search this library", &format!("/opds/libraries/{}/search-definition", lib.id))?;
-             Self::write_link(&mut writer, "search", "application/atom+xml", "Search this library", &format!("/opds/libraries/{}?q={{searchTerms}}", lib.id))?;
+            Self::write_link(&mut writer, "search", "application/atom+xml;profile=opds-catalog;kind=acquisition", "Search this library", &format!("/opds/libraries/{}?q={{searchTerms}}", lib.id))?;
 
              if let Some((page, page_size, total_items, total_pages)) = page_info {
                 let start_index = page * page_size + 1;
@@ -70,25 +80,25 @@ impl OpdsBuilder {
 
                  let separator = if clean_url.contains('?') { "&" } else { "?" };
 
-                Self::write_link(&mut writer, "start", "application/atom+xml;profile=opds-catalog;kind=navigation", "", &clean_url)?;
-                Self::write_link(&mut writer, "first", "application/atom+xml;profile=opds-catalog;kind=acquisition", "", &clean_url)?;
+                Self::write_link(&mut writer, "start", &feed_profile, "", &clean_url)?;
+                Self::write_link(&mut writer, "first", &feed_profile, "", &clean_url)?;
 
                 if page > 0 {
                      let prev_page = page - 1;
                      let href = if prev_page > 0 { format!("{}{}{}{}", clean_url, separator, "page=", prev_page) } else { clean_url.clone() };
-                     Self::write_link(&mut writer, "previous", "application/atom+xml;profile=opds-catalog;kind=acquisition", "", &href)?;
+                     Self::write_link(&mut writer, "previous", &feed_profile, "", &href)?;
                 }
 
                 if page + 1 < total_pages {
                     let next_page = page + 1;
                      let href = format!("{}{}{}{}", clean_url, separator, "page=", next_page);
-                     Self::write_link(&mut writer, "next", "application/atom+xml;profile=opds-catalog;kind=acquisition", "", &href)?;
+                     Self::write_link(&mut writer, "next", &feed_profile, "", &href)?;
                 }
 
                 if total_pages > 1 {
                      let last_page = total_pages - 1;
                       let href = format!("{}{}{}{}", clean_url, separator, "page=", last_page);
-                      Self::write_link(&mut writer, "last", "application/atom+xml;profile=opds-catalog;kind=acquisition", "", &href)?;
+                      Self::write_link(&mut writer, "last", &feed_profile, "", &href)?;
                 }
 
              }
@@ -264,14 +274,25 @@ impl OpdsBuilder {
              let mut content = BytesStart::new("content");
              content.push_attribute(("type", "text"));
              writer.write_event(Event::Start(content))?;
-             writer.write_event(Event::Text(quick_xml::events::BytesText::new(desc)))?;
+             writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(quick_xml::escape::escape(desc))))?;
              writer.write_event(Event::End(BytesEnd::new("content")))?;
         }
 
-        if let Some(publ) = &item.publisher { Self::write_elem(writer, "publisher", publ)?; }
-        if let Some(isbn) = &item.isbn { Self::write_elem(writer, "isbn", isbn)?; }
-        if let Some(year) = &item.published_year { Self::write_elem(writer, "published", year)?; }
-        if let Some(lang) = &item.language { Self::write_elem(writer, "language", lang)?; }
+        if let Some(publ) = &item.publisher { Self::write_elem(writer, "dcterms:publisher", publ)?; }
+        if let Some(isbn) = &item.isbn {
+            let id_val = if isbn.starts_with("urn:isbn:") {
+                isbn.to_string()
+            } else {
+                format!("urn:isbn:{}", isbn)
+            };
+            Self::write_elem(writer, "dcterms:identifier", &id_val)?;
+        }
+        if let Some(year) = &item.published_year { Self::write_elem(writer, "dcterms:issued", year)?; }
+        if let Some(lang) = &item.language { Self::write_elem(writer, "dcterms:language", lang)?; }
+
+        for narrator in &item.narrators {
+            Self::write_elem(writer, "dcterms:contributor", &narrator.name)?;
+        }
 
         let format = item.format.as_deref().unwrap_or("");
         let mime_type = match format {
@@ -353,6 +374,12 @@ impl OpdsBuilder {
 
         Self::write_elem(&mut writer, "id", "urn:abs-opds:error")?;
         Self::write_elem(&mut writer, "title", &format!("Error: {}", error_msg))?;
+
+        // Feed author
+        writer.write_event(Event::Start(BytesStart::new("author")))?;
+        Self::write_elem(&mut writer, "name", "ABS-OPDS")?;
+        writer.write_event(Event::End(BytesEnd::new("author")))?;
+
         Self::write_elem(&mut writer, "updated", &chrono::Utc::now().to_rfc3339())?;
 
         writer.write_event(Event::Start(BytesStart::new("entry")))?;

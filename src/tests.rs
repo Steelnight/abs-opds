@@ -1,9 +1,23 @@
 #[cfg(test)]
 mod tests {
-    use crate::models::{Library, LibraryItem, Author, InternalUser};
+    use crate::models::{Library, LibraryItem, Author, InternalUser, AbsLibrary, AbsItemsResponse, AppConfig};
     use crate::xml::OpdsBuilder;
     use quick_xml::Writer;
     use std::io::Cursor;
+    use std::sync::Arc;
+    use async_trait::async_trait;
+    use mockall::mock;
+
+    mock! {
+        pub AbsClient {}
+        #[async_trait]
+        impl crate::api::AbsClient for AbsClient {
+            async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
+            async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>>;
+            async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary>;
+            async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse>;
+        }
+    }
 
     #[test]
     fn test_build_opds_skeleton() {
@@ -14,12 +28,15 @@ mod tests {
             None,
             None,
             None,
-            "/opds"
+            "/opds",
+            false,
         ).expect("Failed to build XML");
 
         assert!(xml.contains("<id>test_id</id>"));
         assert!(xml.contains("<title>Test Title</title>"));
         assert!(xml.contains("<feed xmlns=\"http://www.w3.org/2005/Atom\""));
+        assert!(xml.contains("<author><name>ABS-OPDS</name></author>"));
+        assert!(xml.contains("<link rel=\"self\" type=\"application/atom+xml;profile=opds-catalog;kind=navigation\" href=\"/opds\"/>"));
     }
 
     #[test]
@@ -45,15 +62,15 @@ mod tests {
             id: "item1".to_string(),
             title: Some("Book Title".to_string()),
             subtitle: None,
-            description: Some("Description".to_string()),
+            description: Some("Description & Details".to_string()),
             genres: vec!["Fantasy".to_string()],
             tags: vec![],
             publisher: Some("Publisher".to_string()),
-            isbn: None,
+            isbn: Some("978-3-16-148410-0".to_string()),
             language: Some("en".to_string()),
             published_year: Some("2023".to_string()),
             authors: vec![Author { name: "Author Name".to_string() }],
-            narrators: vec![],
+            narrators: vec![Author { name: "Narrator Name".to_string() }],
             series: vec![],
             format: Some("epub".to_string()),
         };
@@ -74,6 +91,120 @@ mod tests {
         assert!(entry.contains("<name>Author Name</name>"));
         assert!(entry.contains("application/epub+zip"));
         assert!(entry.contains("token=token"));
+        assert!(entry.contains("<dcterms:publisher>Publisher</dcterms:publisher>"));
+        assert!(entry.contains("<dcterms:identifier>urn:isbn:978-3-16-148410-0</dcterms:identifier>"));
+        assert!(entry.contains("<dcterms:issued>2023</dcterms:issued>"));
+        assert!(entry.contains("<dcterms:language>en</dcterms:language>"));
+        assert!(entry.contains("<dcterms:contributor>Narrator Name</dcterms:contributor>"));
+        assert!(entry.contains("<content type=\"text\">Description &amp; Details</content>"));
+    }
+
+    #[test]
+    fn test_xml_description_escaping() {
+        let item = LibraryItem {
+            id: "item2".to_string(),
+            title: Some("Title".to_string()),
+            subtitle: None,
+            description: Some("Escaping <test> & \"quotes\"".to_string()),
+            genres: vec![],
+            tags: vec![],
+            publisher: None,
+            isbn: None,
+            language: None,
+            published_year: None,
+            authors: vec![],
+            narrators: vec![],
+            series: vec![],
+            format: None,
+        };
+
+        let user = InternalUser {
+            name: "user".to_string(),
+            api_key: "token".to_string(),
+            password: None,
+        };
+
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+        let mut url_buf = String::new();
+        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000", "2026-06-02T12:00:00Z", &mut url_buf).expect("Failed to build entry");
+
+        let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
+        assert!(entry.contains("<content type=\"text\">Escaping &lt;test&gt; &amp; &quot;quotes&quot;</content>"));
+    }
+
+    #[tokio::test]
+    async fn test_routes_content_type_headers() {
+        use tower::ServiceExt;
+        use axum::http::{Request, StatusCode};
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+
+        let mut mock_client = MockAbsClient::new();
+
+        let user_ref = InternalUser {
+            name: "test_user".to_string(),
+            api_key: "test_token".to_string(),
+            password: None,
+        };
+
+        mock_client.expect_login()
+            .returning(move |_, _| Ok(InternalUser {
+                name: "test_user".to_string(),
+                api_key: "test_token".to_string(),
+                password: Some("pass".to_string()),
+            }));
+
+        let libs = vec![
+            AbsLibrary { id: "lib1".to_string(), name: "Lib 1".to_string(), icon: None },
+            AbsLibrary { id: "lib2".to_string(), name: "Lib 2".to_string(), icon: None },
+        ];
+
+        mock_client.expect_get_libraries()
+            .returning(move |_| Ok(libs.clone()));
+
+        let lib_detail = AbsLibrary { id: "lib1".to_string(), name: "Lib 1".to_string(), icon: None };
+        mock_client.expect_get_library()
+            .returning(move |_, _| Ok(lib_detail.clone()));
+
+        mock_client.expect_get_items()
+            .returning(move |_, _| Ok(AbsItemsResponse { results: vec![] }));
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "test_user:test_token:pass".to_string(),
+            internal_users: vec![user_ref.clone()],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        let request_and_check = |app: axum::Router, path: String, expected_ct: String| async move {
+            let req = Request::builder()
+                .uri(&path)
+                .header("Authorization", "Basic dGVzdF91c2VyOnBhc3M=")
+                .body(axum::body::Body::empty())
+                .unwrap();
+
+            let response = app.oneshot(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let ct = response.headers().get(axum::http::header::CONTENT_TYPE).unwrap();
+            assert_eq!(ct.to_str().unwrap(), &expected_ct);
+        };
+
+        request_and_check(app.clone(), "/opds".to_string(), "application/atom+xml;profile=opds-catalog;kind=navigation".to_string()).await;
+        request_and_check(app.clone(), "/opds/libraries/lib1".to_string(), "application/atom+xml;profile=opds-catalog;kind=acquisition".to_string()).await;
+        request_and_check(app.clone(), "/opds/libraries/lib1?categories=true".to_string(), "application/atom+xml;profile=opds-catalog;kind=navigation".to_string()).await;
+        request_and_check(app.clone(), "/opds/libraries/lib1/search-definition".to_string(), "application/opensearchdescription+xml".to_string()).await;
     }
 
     #[test]
