@@ -36,12 +36,32 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub fn new(base_url: String) -> Self {
+    pub fn new(base_url: String, client: Client) -> Self {
+        let token_cache: Arc<RwLock<HashMap<String, CachedSession>>> = Arc::new(RwLock::new(HashMap::new()));
+        let items_cache: Arc<RwLock<HashMap<String, CachedItems>>> = Arc::new(RwLock::new(HashMap::new()));
+
+        // Active cache purge in a background task
+        let token_cache_clone = token_cache.clone();
+        let items_cache_clone = items_cache.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                interval.tick().await;
+                let now = Instant::now();
+                if let Ok(mut cache) = token_cache_clone.write() {
+                    cache.retain(|_, session| now < session.expires);
+                }
+                if let Ok(mut cache) = items_cache_clone.write() {
+                    cache.retain(|_, cached| now < cached.expires);
+                }
+            }
+        });
+
         Self {
             base_url,
-            client: Client::new(),
-            token_cache: Arc::new(RwLock::new(HashMap::new())),
-            items_cache: Arc::new(RwLock::new(HashMap::new())),
+            client,
+            token_cache,
+            items_cache,
             cache_ttl: Duration::from_secs(600), // 10 minutes
         }
     }

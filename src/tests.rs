@@ -150,7 +150,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = crate::api::ApiClient::new(mock_server.uri());
+        let client = crate::api::ApiClient::new(mock_server.uri(), reqwest::Client::new());
         use crate::api::AbsClient;
 
         // 1. Success login
@@ -164,5 +164,24 @@ mod tests {
         // 3. Login with wrong password (should fail because it hits backend and gets 401, instead of using cached token!)
         let err = client.login("test_user", "wrong_password").await;
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_contains_case_insensitive() {
+        use crate::service::contains_case_insensitive;
+        assert!(contains_case_insensitive("Hello World", "hello"));
+        assert!(contains_case_insensitive("Hello World", "world"));
+        assert!(contains_case_insensitive("Hello World", ""));
+        assert!(!contains_case_insensitive("Hello World", "hi"));
+        // Unicode case folding test
+        assert!(contains_case_insensitive("Äpfel", "äpfel"));
+    }
+
+    #[test]
+    fn test_get_token_from_query() {
+        use crate::auth::get_token_from_query;
+        assert_eq!(get_token_from_query("token=my_secret"), Some("my_secret"));
+        assert_eq!(get_token_from_query("foo=bar&token=secret2&baz=qux"), Some("secret2"));
+        assert_eq!(get_token_from_query("foo=bar"), None);
     }
 }

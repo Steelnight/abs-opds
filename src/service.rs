@@ -310,8 +310,8 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
 
          if let Some(title) = &query.title {
              let title_lower = title.to_lowercase();
-             let title_match = item.media.metadata.title.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower)) ||
-                 item.media.metadata.subtitle.as_deref().map_or(false, |t| t.to_lowercase().contains(&title_lower));
+             let title_match = item.media.metadata.title.as_deref().map_or(false, |t| contains_case_insensitive(t, &title_lower)) ||
+                 item.media.metadata.subtitle.as_deref().map_or(false, |t| contains_case_insensitive(t, &title_lower));
              if !title_match {
                  return false;
              }
@@ -321,13 +321,13 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
     }
 }
 
-fn author_matches(author_name: Option<&str>, term: &str) -> bool {
+fn author_matches(author_name: Option<&str>, term_lower: &str) -> bool {
     author_name.map_or(false, |s| {
-        s.split(',').any(|n| n.trim().to_lowercase().contains(term))
+        s.split(',').any(|n| contains_case_insensitive(n.trim(), term_lower))
     })
 }
 
-fn clean_series(series_name: Option<&str>, term: &str) -> bool {
+fn clean_series(series_name: Option<&str>, term_lower: &str) -> bool {
     series_name.map_or(false, |s| {
         s.split(',').any(|n| {
             let cleaned = if let Some(idx) = n.find('#') {
@@ -335,29 +335,42 @@ fn clean_series(series_name: Option<&str>, term: &str) -> bool {
             } else {
                 n.trim()
             };
-            cleaned.to_lowercase().contains(term)
+            contains_case_insensitive(cleaned, term_lower)
         })
     })
 }
 
-fn matches_search_abs(metadata: &crate::models::AbsMetadata, term: &str) -> bool {
-    if term.is_empty() {
+fn matches_search_abs(metadata: &crate::models::AbsMetadata, term_lower: &str) -> bool {
+    if term_lower.is_empty() {
         return true;
     }
-    metadata.title.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-    metadata.subtitle.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-    metadata.description.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-    metadata.publisher.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-    metadata.isbn.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-    metadata.language.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-    metadata.published_year.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
+    metadata.title.as_deref().map_or(false, |s| contains_case_insensitive(s, term_lower)) ||
+    metadata.subtitle.as_deref().map_or(false, |s| contains_case_insensitive(s, term_lower)) ||
+    metadata.description.as_deref().map_or(false, |s| contains_case_insensitive(s, term_lower)) ||
+    metadata.publisher.as_deref().map_or(false, |s| contains_case_insensitive(s, term_lower)) ||
+    metadata.isbn.as_deref().map_or(false, |s| contains_case_insensitive(s, term_lower)) ||
+    metadata.language.as_deref().map_or(false, |s| contains_case_insensitive(s, term_lower)) ||
+    metadata.published_year.as_deref().map_or(false, |s| contains_case_insensitive(s, term_lower)) ||
     metadata.author_name.as_deref().map_or(false, |s| {
-        s.split(',').any(|n| n.trim().to_lowercase().contains(term))
+        s.split(',').any(|n| contains_case_insensitive(n.trim(), term_lower))
     }) ||
     metadata.genres.as_ref().map_or(false, |genres| {
-        genres.iter().any(|g| g.to_lowercase().contains(term))
+        genres.iter().any(|g| contains_case_insensitive(g, term_lower))
     }) ||
     metadata.tags.as_ref().map_or(false, |tags| {
-        tags.iter().any(|t| t.to_lowercase().contains(term))
+        tags.iter().any(|t| contains_case_insensitive(t, term_lower))
     })
+}
+
+pub(crate) fn contains_case_insensitive(haystack: &str, needle_lower: &str) -> bool {
+    if needle_lower.is_empty() {
+        return true;
+    }
+    if haystack.is_ascii() && needle_lower.is_ascii() {
+        haystack.as_bytes().windows(needle_lower.len()).any(|window| {
+            window.eq_ignore_ascii_case(needle_lower.as_bytes())
+        })
+    } else {
+        haystack.to_lowercase().contains(needle_lower)
+    }
 }

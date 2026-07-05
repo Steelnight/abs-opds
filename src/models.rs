@@ -1,10 +1,20 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct InternalUser {
     pub name: String,
     pub api_key: String,
     pub password: Option<String>,
+}
+
+impl std::fmt::Debug for InternalUser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InternalUser")
+            .field("name", &self.name)
+            .field("api_key", &"[REDACTED]")
+            .field("password", &self.password.as_ref().map(|_| "[REDACTED]"))
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,6 +215,13 @@ impl AppConfig {
             return Err(anyhow::anyhow!(
                 "No users configured and OPDS_NO_AUTH is false. Please set OPDS_USERS or enable OPDS_NO_AUTH."
             ));
+        }
+        if self.opds_no_auth {
+            if self.abs_noauth_username.trim().is_empty() || self.abs_noauth_password.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "OPDS_NO_AUTH is enabled, but ABS_NOAUTH_USERNAME or ABS_NOAUTH_PASSWORD is not set."
+                ));
+            }
         }
         Ok(())
     }

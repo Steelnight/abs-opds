@@ -37,8 +37,13 @@ pub struct AppState {
 pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
     let i18n = I18n::new();
 
-    let api_client = Arc::new(ApiClient::new(config.abs_url.clone()));
-    let api_client_raw = reqwest::Client::new();
+    // Create shared reqwest Client with 10 seconds timeout
+    let api_client_raw = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let api_client = Arc::new(ApiClient::new(config.abs_url.clone(), api_client_raw.clone()));
     let client_dyn: Arc<dyn AbsClient + Send + Sync> = api_client;
 
     let service = LibraryService::new(client_dyn.clone(), config.clone(), i18n.clone());
@@ -58,7 +63,10 @@ pub async fn build_app_state_with_mock(
     mock_client: Arc<dyn AbsClient + Send + Sync>
 ) -> Arc<AppState> {
     let i18n = I18n::new();
-    let api_client_raw = reqwest::Client::new();
+    let api_client_raw = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
 
     let service = LibraryService::new(mock_client.clone(), config.clone(), i18n.clone());
 
@@ -114,6 +122,15 @@ pub async fn run() {
     tracing::info!("OPDS server running at http://{}", addr);
     tracing::info!("Server URL: {}", abs_url);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("Failed to bind to address {}: {}", addr, e);
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) = axum::serve(listener, app).await {
+        tracing::error!("Server error: {}", e);
+        std::process::exit(1);
+    }
 }

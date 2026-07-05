@@ -97,7 +97,9 @@ impl OpdsBuilder {
         write_entries(&mut writer)?;
 
         writer.write_event(Event::End(BytesEnd::new("feed")))?;
-        Ok(String::from_utf8(writer.into_inner().into_inner()).unwrap())
+        String::from_utf8(writer.into_inner().into_inner()).map_err(|e| {
+            quick_xml::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into())
+        })
     }
 
     fn write_elem(writer: &mut Writer<Cursor<Vec<u8>>>, name: &str, value: &str) -> Result<(), quick_xml::Error> {
@@ -336,7 +338,9 @@ impl OpdsBuilder {
         writer.write_event(Event::Empty(url))?;
 
          writer.write_event(Event::End(BytesEnd::new("OpenSearchDescription")))?;
-         Ok(String::from_utf8(writer.into_inner().into_inner()).unwrap_or_default())
+         String::from_utf8(writer.into_inner().into_inner()).map_err(|e| {
+             quick_xml::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into())
+         })
       }
 
      pub fn build_error_feed(error_msg: &str) -> Result<String, quick_xml::Error> {
@@ -364,6 +368,8 @@ impl OpdsBuilder {
         writer.write_event(Event::End(BytesEnd::new("entry")))?;
 
         writer.write_event(Event::End(BytesEnd::new("feed")))?;
-        Ok(String::from_utf8(writer.into_inner().into_inner()).unwrap_or_default())
+        String::from_utf8(writer.into_inner().into_inner()).map_err(|e| {
+            quick_xml::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e).into())
+        })
      }
 }

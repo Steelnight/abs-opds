@@ -100,7 +100,26 @@ where
                     }
                 }
             }
-            _ => {}
+            _ => {
+                // If Authorization header is not present, check query parameter ?token=...
+                if let Some(query) = parts.uri.query() {
+                    if let Some(token) = get_token_from_query(query) {
+                        if let Some(internal_user) = state.config.internal_users.iter().find(|u| {
+                            u.api_key == token
+                        }) {
+                            debug!("Token-authenticated internal user: {}", internal_user.name);
+                            return Ok(AuthUser(internal_user.clone()));
+                        }
+
+                        debug!("Using query token as ABS bearer key");
+                        return Ok(AuthUser(InternalUser {
+                            name: "abs_user".to_string(),
+                            api_key: token.to_string(),
+                            password: None,
+                        }));
+                    }
+                }
+            }
         }
 
         // Failed
@@ -111,4 +130,15 @@ where
         );
         Err(res)
     }
+}
+
+pub(crate) fn get_token_from_query(query: &str) -> Option<&str> {
+    for param in query.split('&') {
+        if let Some((key, val)) = param.split_once('=') {
+            if key == "token" {
+                return Some(val);
+            }
+        }
+    }
+    None
 }

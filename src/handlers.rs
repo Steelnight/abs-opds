@@ -45,7 +45,25 @@ pub async fn get_opds_root(
                      None,
                      &format!("/opds/libraries/{}", library_id)
                  ).unwrap_or_else(|_| String::new());
-                 return ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response();
+
+                 let etag = {
+                     let mut hasher = Sha1::new();
+                     hasher.update(xml.as_bytes());
+                     format!("W/\"{}\"", hasher.digest())
+                 };
+                 if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                     if if_none_match == etag {
+                         return StatusCode::NOT_MODIFIED.into_response();
+                     }
+                 }
+                 let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+                 return (
+                     [
+                         (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                         (axum::http::header::ETAG, etag_value),
+                     ],
+                     xml,
+                 ).into_response();
             }
 
             let mut hasher = Sha1::new();
@@ -62,7 +80,24 @@ pub async fn get_opds_root(
                 "/opds"
             ).unwrap_or_else(|_| String::new());
 
-             ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response()
+            let etag = {
+                let mut hasher = Sha1::new();
+                hasher.update(xml.as_bytes());
+                format!("W/\"{}\"", hasher.digest())
+            };
+            if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                if if_none_match == etag {
+                    return StatusCode::NOT_MODIFIED.into_response();
+                }
+            }
+            let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+            return (
+                [
+                    (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                    (axum::http::header::ETAG, etag_value),
+                ],
+                xml,
+            ).into_response();
         }
         Err(e) => {
             tracing::error!("Failed to fetch libraries: {}", e);
@@ -83,16 +118,34 @@ pub async fn get_library(
     let updated_time = chrono::Utc::now().to_rfc3339();
 
     if query.categories.is_some() {
-         let xml = OpdsBuilder::build_opds_skeleton(
-             &format!("urn:uuid:{}", library_id),
-             "Categories",
-             OpdsBuilder::build_category_entries(&library_id, &state.i18n, lang, &updated_time),
-             None,
-             None,
-             None,
-             &format!("/opds/libraries/{}", library_id)
-         ).unwrap_or_else(|_| String::new());
-         return ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response();
+          let xml = OpdsBuilder::build_opds_skeleton(
+              &format!("urn:uuid:{}", library_id),
+              "Categories",
+              OpdsBuilder::build_category_entries(&library_id, &state.i18n, lang, &updated_time),
+              None,
+              None,
+              None,
+              &format!("/opds/libraries/{}", library_id)
+          ).unwrap_or_else(|_| String::new());
+
+          let etag = {
+              let mut hasher = Sha1::new();
+              hasher.update(xml.as_bytes());
+              format!("W/\"{}\"", hasher.digest())
+          };
+          if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+              if if_none_match == etag {
+                  return StatusCode::NOT_MODIFIED.into_response();
+              }
+          }
+          let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+          return (
+              [
+                  (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                  (axum::http::header::ETAG, etag_value),
+              ],
+              xml,
+          ).into_response();
     }
 
     match state.service.get_library(&user, &library_id).await {
@@ -133,7 +186,25 @@ pub async fn get_library(
                         &url_base
                     ).unwrap_or_else(|_| String::new());
 
-                    ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response()
+                    let etag = {
+                        let mut hasher = Sha1::new();
+                        hasher.update(xml.as_bytes());
+                        format!("W/\"{}\"", hasher.digest())
+                    };
+                    if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                        if if_none_match == etag {
+                            return StatusCode::NOT_MODIFIED.into_response();
+                        }
+                    }
+
+                    let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+                    (
+                        [
+                            (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                            (axum::http::header::ETAG, etag_value),
+                        ],
+                        xml,
+                    ).into_response()
                 },
                 Err(e) => {
                     tracing::error!("Failed to filter items: {}", e);
@@ -155,6 +226,7 @@ pub async fn get_category(
     AuthUser(user): AuthUser,
     Path((library_id, type_)): Path<(String, String)>,
     Query(query): Query<LibraryQuery>,
+    headers: HeaderMap,
 ) -> Response {
     let item_type_str = type_.as_str();
     if !["authors", "narrators", "genres", "series"].contains(&item_type_str) {
@@ -162,7 +234,26 @@ pub async fn get_category(
     }
 
     match state.service.get_categories(&user, &library_id, &type_, &query).await {
-        Ok(xml) => ([(axum::http::header::CONTENT_TYPE, "application/xml")], xml).into_response(),
+        Ok(xml) => {
+            let etag = {
+                let mut hasher = Sha1::new();
+                hasher.update(xml.as_bytes());
+                format!("W/\"{}\"", hasher.digest())
+            };
+            if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                if if_none_match == etag {
+                    return StatusCode::NOT_MODIFIED.into_response();
+                }
+            }
+            let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+            (
+                [
+                    (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/xml")),
+                    (axum::http::header::ETAG, etag_value),
+                ],
+                xml,
+            ).into_response()
+        }
         Err(e) => {
             tracing::error!("Failed to fetch category items: {}", e);
             let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch category items: {}", e)).unwrap_or_default();
@@ -186,6 +277,7 @@ pub async fn search_definition(
 
 pub async fn proxy_handler(
     State(state): State<Arc<AppState>>,
+    AuthUser(_user): AuthUser,
     req: axum::extract::Request,
 ) -> Response {
     if !state.config.use_proxy {
@@ -198,6 +290,11 @@ pub async fn proxy_handler(
 
     let path = req.uri().path();
     let target_path = path.strip_prefix("/opds/proxy").unwrap_or(path);
+
+    if target_path.contains("..") {
+        return (StatusCode::BAD_REQUEST, "Invalid path").into_response();
+    }
+
     let target_url = format!("{}{}", state.config.abs_url, target_path);
 
     let full_target_url = if let Some(query) = req.uri().query() {
