@@ -1,6 +1,7 @@
 use crate::auth::AuthUser;
 use crate::models::ItemType;
 use crate::xml::OpdsBuilder;
+use crate::opds2::Opds2Builder;
 use crate::AppState;
 use axum::{
     extract::{Path, Query, State},
@@ -25,6 +26,14 @@ pub struct LibraryQuery {
     pub start: Option<String>,
 }
 
+fn wants_opds_v2(headers: &HeaderMap) -> bool {
+    if let Some(accept) = headers.get(axum::http::header::ACCEPT).and_then(|h| h.to_str().ok()) {
+        accept.contains("application/opds+json")
+    } else {
+        false
+    }
+}
+
 pub async fn get_opds_root(
     State(state): State<Arc<AppState>>,
     AuthUser(user): AuthUser,
@@ -33,6 +42,35 @@ pub async fn get_opds_root(
     match state.service.get_libraries(&user).await {
         Ok(libraries) => {
             let updated_time = chrono::Utc::now().to_rfc3339();
+            if wants_opds_v2(&headers) {
+                let json = if libraries.len() == 1 {
+                    let library_id = &libraries[0].id;
+                    let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
+                    Opds2Builder::build_categories_root(library_id, &state.i18n, lang, &updated_time)
+                } else {
+                    Opds2Builder::build_root(&libraries, &updated_time)
+                };
+
+                let etag = {
+                    let mut hasher = Sha1::new();
+                    hasher.update(json.as_bytes());
+                    format!("W/\"{}\"", hasher.digest())
+                };
+                if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                    if if_none_match == etag {
+                        return StatusCode::NOT_MODIFIED.into_response();
+                    }
+                }
+                let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+                return (
+                    [
+                        (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/opds+json")),
+                        (axum::http::header::ETAG, etag_value),
+                    ],
+                    json,
+                ).into_response();
+            }
+
             if libraries.len() == 1 {
                  let library_id = &libraries[0].id;
                  let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
@@ -118,6 +156,102 @@ pub async fn get_library(
 ) -> Response {
     let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
     let updated_time = chrono::Utc::now().to_rfc3339();
+
+    if wants_opds_v2(&headers) {
+        if query.categories.is_some() {
+            let json = Opds2Builder::build_categories_root(&library_id, &state.i18n, lang, &updated_time);
+            let etag = {
+                let mut hasher = Sha1::new();
+                hasher.update(json.as_bytes());
+                format!("W/\"{}\"", hasher.digest())
+            };
+            if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                if if_none_match == etag {
+                    return StatusCode::NOT_MODIFIED.into_response();
+                }
+            }
+            let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+            return (
+                [
+                    (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/opds+json")),
+                    (axum::http::header::ETAG, etag_value),
+                ],
+                json,
+            ).into_response();
+        }
+
+        match state.service.get_library(&user, &library_id).await {
+            Ok(library) => {
+                match state.service.get_filtered_items(&user, &library_id, &query).await {
+                    Ok((paginated_items, total_items)) => {
+                        let page_size = state.config.opds_page_size;
+                        let total_pages = (total_items + page_size - 1) / page_size;
+
+                        let link_url = if state.config.use_proxy { "/opds/proxy" } else { &state.config.abs_url };
+
+                        let mut url_base = format!("/opds/libraries/{}", library_id);
+                        let mut params = Vec::new();
+                        if let Some(q) = &query.q { params.push(format!("q={}", q)); }
+                        if let Some(t) = &query.type_ { params.push(format!("type={}", t)); }
+                        if let Some(n) = &query.name { params.push(format!("name={}", n)); }
+                        if let Some(a) = &query.author { params.push(format!("author={}", a)); }
+                        if let Some(t) = &query.title { params.push(format!("title={}", t)); }
+
+                        if !params.is_empty() {
+                            url_base.push('?');
+                            url_base.push_str(&params.join("&"));
+                        }
+
+                        let json = Opds2Builder::build_publications(
+                            &library_id,
+                            &library.name,
+                            &paginated_items,
+                            &user,
+                            link_url,
+                            &updated_time,
+                            Some((query.page, page_size, total_items, total_pages)),
+                            &url_base,
+                        );
+
+                        let etag = {
+                            let mut hasher = Sha1::new();
+                            hasher.update(json.as_bytes());
+                            format!("W/\"{}\"", hasher.digest())
+                        };
+                        if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                            if if_none_match == etag {
+                                return StatusCode::NOT_MODIFIED.into_response();
+                            }
+                        }
+                        let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+                        return (
+                            [
+                                (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/opds+json")),
+                                (axum::http::header::ETAG, etag_value),
+                            ],
+                            json,
+                        ).into_response();
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to filter items: {}", e);
+                        let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to filter items: {}", e)).unwrap_or_default();
+                        return (
+                            [(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")],
+                            error_xml,
+                        ).into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch library: {}", e);
+                let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch library: {}", e)).unwrap_or_default();
+                return (
+                    [(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")],
+                    error_xml,
+                ).into_response();
+            }
+        }
+    }
 
     if query.categories.is_some() {
           let xml = OpdsBuilder::build_opds_skeleton(
@@ -235,6 +369,71 @@ pub async fn get_category(
     let item_type_str = type_.as_str();
     if !["authors", "narrators", "genres", "series"].contains(&item_type_str) {
         return (StatusCode::BAD_REQUEST, "Invalid type").into_response();
+    }
+
+    if wants_opds_v2(&headers) {
+        match state.service.get_library(&user, &library_id).await {
+            Ok(library) => {
+                match state.service.get_categories_data(&user, &library_id, &type_, &query).await {
+                    Ok(categories_res) => {
+                        let json = match categories_res {
+                            crate::service::CategoriesResult::Letters(letters) => {
+                                Opds2Builder::build_category_letters(&library_id, &library.name, &type_, &letters)
+                            }
+                            crate::service::CategoriesResult::Items { items, page_info } => {
+                                let mut url_base = format!("/opds/libraries/{}/{}", library_id, type_);
+                                if let Some(start) = &query.start {
+                                    url_base.push_str(&format!("?start={}", start));
+                                }
+                                Opds2Builder::build_category_items(
+                                    &library_id,
+                                    &library.name,
+                                    &type_,
+                                    &items,
+                                    page_info,
+                                    &url_base,
+                                )
+                            }
+                        };
+
+                        let etag = {
+                            let mut hasher = Sha1::new();
+                            hasher.update(json.as_bytes());
+                            format!("W/\"{}\"", hasher.digest())
+                        };
+                        if let Some(if_none_match) = headers.get(axum::http::header::IF_NONE_MATCH).and_then(|h| h.to_str().ok()) {
+                            if if_none_match == etag {
+                                return StatusCode::NOT_MODIFIED.into_response();
+                            }
+                        }
+                        let etag_value = axum::http::HeaderValue::try_from(etag).unwrap();
+                        return (
+                            [
+                                (axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("application/opds+json")),
+                                (axum::http::header::ETAG, etag_value),
+                            ],
+                            json,
+                        ).into_response();
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to fetch category data: {}", e);
+                        let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch category data: {}", e)).unwrap_or_default();
+                        return (
+                            [(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")],
+                            error_xml,
+                        ).into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch library: {}", e);
+                let error_xml = OpdsBuilder::build_error_feed(&format!("Failed to fetch library: {}", e)).unwrap_or_default();
+                return (
+                    [(axum::http::header::CONTENT_TYPE, "application/atom+xml;profile=opds-catalog;kind=navigation")],
+                    error_xml,
+                ).into_response();
+            }
+        }
     }
 
     match state.service.get_categories(&user, &library_id, &type_, &query).await {

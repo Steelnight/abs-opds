@@ -13,6 +13,7 @@ pub mod i18n;
 pub mod models;
 pub mod service;
 pub mod xml;
+pub mod opds2;
 #[cfg(test)]
 pub mod tests;
 #[cfg(test)]

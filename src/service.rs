@@ -15,6 +15,15 @@ mod service_tests;
 #[path = "performance_tests.rs"]
 mod performance_tests;
 
+#[derive(Debug, Clone)]
+pub enum CategoriesResult {
+    Letters(Vec<(String, usize)>),
+    Items {
+        items: Vec<String>,
+        page_info: Option<(usize, usize, usize, usize)>,
+    },
+}
+
 pub struct LibraryService<C: AbsClient + ?Sized> {
     pub client: Arc<C>,
     pub config: AppConfig,
@@ -104,24 +113,15 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
         }
     }
 
-    pub async fn get_categories(
+    pub async fn get_categories_data(
         &self,
         user: &InternalUser,
         library_id: &str,
         type_: &str,
         query: &crate::handlers::LibraryQuery,
-    ) -> Result<String> {
-         let updated_time = chrono::Utc::now().to_rfc3339();
+    ) -> Result<CategoriesResult> {
          let items_data = self.client.get_items(user, library_id).await?;
-         let lib_data = self.client.get_library(user, library_id).await?;
 
-         let library = Library {
-             id: lib_data.id,
-             name: lib_data.name,
-             icon: lib_data.icon,
-         };
-
-         // Suggestion 6: Sequential fold instead of parallel map-reduce Set merges
          let mut distinct_type = HashSet::new();
          for item in items_data.results {
              match type_ {
@@ -179,25 +179,12 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                 let mut keys: Vec<String> = count_by_start.keys().cloned().collect();
                 keys.sort();
 
-                 OpdsBuilder::build_opds_skeleton(
-                       &format!("urn:uuid:{}", library_id),
-                       &library.name,
-                       |writer| {
-                           let mut url_buf = String::with_capacity(256);
-                           for letter in keys {
-                               let count = count_by_start[&letter];
-                               let title = format!("{} ({})", letter, count);
-                               let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
-                               OpdsBuilder::build_custom_card_entry(writer, &title, &link, &updated_time, &mut url_buf)?;
-                           }
-                           Ok(())
-                       },
-                       None,
-                       None,
-                       None,
-                       &format!("/opds/libraries/{}/{}", library_id, type_),
-                       false,
-                   ).map_err(|e| e.into())
+                let letters = keys.into_iter().map(|letter| {
+                    let count = count_by_start[&letter];
+                    (letter, count)
+                }).collect();
+
+                Ok(CategoriesResult::Letters(letters))
          } else {
              let mut distinct_type_array: Vec<String> = if let Some(start) = &query.start {
                  distinct_type.into_iter()
@@ -212,7 +199,6 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
              };
              distinct_type_array.sort_unstable();
 
-             // Suggestion 7: Category pagination
              let total_items = distinct_type_array.len();
              let page_size = self.config.opds_page_size;
              let total_pages = (total_items + page_size - 1) / page_size;
@@ -220,32 +206,77 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
 
              let (paginated_items, page_info) = if start_index < total_items {
                  let end_index = std::cmp::min(start_index + page_size, total_items);
-                 (&distinct_type_array[start_index..end_index], Some((query.page, page_size, total_items, total_pages)))
+                 (distinct_type_array[start_index..end_index].to_vec(), Some((query.page, page_size, total_items, total_pages)))
              } else {
-                 (&[][..], Some((query.page, page_size, total_items, total_pages)))
+                 (vec![], Some((query.page, page_size, total_items, total_pages)))
              };
 
-             let mut url_base = format!("/opds/libraries/{}/{}", library_id, type_);
-             if let Some(start) = &query.start {
-                 url_base.push_str(&format!("?start={}", start));
-             }
+             Ok(CategoriesResult::Items {
+                 items: paginated_items,
+                 page_info,
+             })
+         }
+    }
 
-                 OpdsBuilder::build_opds_skeleton(
-                    &format!("urn:uuid:{}", library_id),
-                    &library.name,
-                    |writer| {
-                        let mut url_buf = String::with_capacity(256);
-                        for item in paginated_items {
-                            OpdsBuilder::build_card_entry(writer, item, &type_, &library_id, &updated_time, &mut url_buf)?;
-                        }
-                        Ok(())
-                    },
-                   Some(&library),
-                   Some(user),
-                   page_info,
-                   &url_base,
-                   false,
-               ).map_err(|e| e.into())
+    pub async fn get_categories(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+        type_: &str,
+        query: &crate::handlers::LibraryQuery,
+    ) -> Result<String> {
+         let updated_time = chrono::Utc::now().to_rfc3339();
+         let lib_data = self.client.get_library(user, library_id).await?;
+         let library = Library {
+             id: lib_data.id,
+             name: lib_data.name,
+             icon: lib_data.icon,
+         };
+
+         match self.get_categories_data(user, library_id, type_, query).await? {
+             CategoriesResult::Letters(letters) => {
+                  OpdsBuilder::build_opds_skeleton(
+                        &format!("urn:uuid:{}", library_id),
+                        &library.name,
+                        |writer| {
+                            let mut url_buf = String::with_capacity(256);
+                            for (letter, count) in letters {
+                                let title = format!("{} ({})", letter, count);
+                                let link = format!("/opds/libraries/{}/{}?start={}", library_id, type_, letter.to_lowercase());
+                                OpdsBuilder::build_custom_card_entry(writer, &title, &link, &updated_time, &mut url_buf)?;
+                            }
+                            Ok(())
+                        },
+                        None,
+                        None,
+                        None,
+                        &format!("/opds/libraries/{}/{}", library_id, type_),
+                        false,
+                    ).map_err(|e| e.into())
+             }
+             CategoriesResult::Items { items, page_info } => {
+                  let mut url_base = format!("/opds/libraries/{}/{}", library_id, type_);
+                  if let Some(start) = &query.start {
+                      url_base.push_str(&format!("?start={}", start));
+                  }
+
+                  OpdsBuilder::build_opds_skeleton(
+                     &format!("urn:uuid:{}", library_id),
+                     &library.name,
+                     |writer| {
+                         let mut url_buf = String::with_capacity(256);
+                         for item in items {
+                             OpdsBuilder::build_card_entry(writer, &item, &type_, &library_id, &updated_time, &mut url_buf)?;
+                         }
+                         Ok(())
+                     },
+                    Some(&library),
+                    Some(user),
+                    page_info,
+                    &url_base,
+                    false,
+                ).map_err(|e| e.into())
+             }
          }
     }
 
