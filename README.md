@@ -22,9 +22,16 @@ OPDS-Server for ABS (Audiobookshelf) is a working OPDS server that can be used w
 - [x] Thorium
 - [x] Moon+ Reader
 
-## Built-In Demo
+## Running with Docker Compose
 
-Spin up the provided Docker Compose instance and add `http://<local-server-ip>:3010/opds` to your OPDS reader and type in the credentials `demotest` for both username and password.
+Copy `.env.example` to `.env` and fill in `ABS_URL` and `OPDS_USERS` for your own
+Audiobookshelf server, then run `docker compose up`. Add
+`http://<local-server-ip>:3010/opds` to your OPDS reader and log in with the
+username/password you chose in `OPDS_USERS`.
+
+(An earlier version of this file shipped a working demo login against a public
+Audiobookshelf instance. That credential was a live API token that should never
+have been committed; it has been removed and no longer authenticates.)
 
 
 ## ENVs

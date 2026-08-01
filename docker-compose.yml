@@ -8,8 +8,9 @@ services:
       - "3010:3010"
     environment:
       - PORT=3010
-      - ABS_URL=https://audiobooks.dev
-      - OPDS_USERS=demotest:eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNzQ1ZjAyZi03NmIyLTQ1N2ItOWY2MC0yNzFmZWQzYTNlMjEiLCJ1c2VybmFtZSI6ImRlbW8iLCJpYXQiOjE3MzI0NzIyOTJ9.FGKHLczOJgdHUTIta1y_VlgUbJtZp902utXhUZy-7GE:demo_password
+      # Set ABS_URL and OPDS_USERS in a local .env file (gitignored); see .env.example.
+      - ABS_URL=${ABS_URL:-https://your-audiobookshelf-server.example}
+      - OPDS_USERS=${OPDS_USERS:-demotest:CHANGE_ME_ABS_API_TOKEN:demo_password}
       - OPDS_PAGE_SIZE=20
       - SHOW_AUDIOBOOKS=true
       - SHOW_CHAR_CARDS=true
