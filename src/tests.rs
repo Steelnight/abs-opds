@@ -965,6 +965,112 @@ mod suite {
         assert!(secure_eq("", ""));
     }
 
+    async fn build_proxy_test_app(abs_url: String) -> axum::Router {
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+
+        let mut mock_client = MockAbsClient::new();
+        mock_client.expect_login().returning(move |_, _| {
+            Ok(InternalUser {
+                name: "test_user".to_string(),
+                api_key: "test_token".to_string(),
+                password: Some("pass".to_string()),
+            })
+        });
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: true,
+            abs_url,
+            opds_users: "test_user:test_token:pass".to_string(),
+            internal_users: vec![InternalUser {
+                name: "test_user".to_string(),
+                api_key: "test_token".to_string(),
+                password: Some("pass".to_string()),
+            }],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        build_router(state)
+    }
+
+    fn proxy_request(uri: &str) -> axum::http::Request<axum::body::Body> {
+        axum::http::Request::builder()
+            .uri(uri)
+            .header("Authorization", "Basic dGVzdF91c2VyOnBhc3M=")
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_proxy_rejects_percent_encoded_traversal() {
+        // Regression test: target_path.contains("..") was checked against
+        // the raw, still percent-encoded request path, so %2e%2e (and %2f
+        // hiding an extra separator that turns ".." into its own segment
+        // once decoded) sailed through unnoticed.
+        use axum::http::StatusCode;
+        use tower::ServiceExt;
+
+        let app = build_proxy_test_app("http://localhost:1".to_string()).await;
+
+        for uri in [
+            "/opds/proxy/%2e%2e/admin",
+            "/opds/proxy/api/items/abc%2f..%2fadmin/cover",
+        ] {
+            let req = proxy_request(uri);
+            let response = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::FORBIDDEN,
+                "expected {} to be rejected",
+                uri
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_proxy_rejects_paths_outside_allowlist() {
+        // The proxy is only meant to serve item covers/ebooks/downloads, not
+        // relay arbitrary ABS API endpoints.
+        use axum::http::StatusCode;
+        use tower::ServiceExt;
+
+        let app = build_proxy_test_app("http://localhost:1".to_string()).await;
+
+        let req = proxy_request("/opds/proxy/api/libraries");
+        let response = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_proxy_allows_item_cover_path() {
+        use axum::http::StatusCode;
+        use tower::ServiceExt;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/items/abc/cover"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8; 4]))
+            .mount(&mock_server)
+            .await;
+
+        let app = build_proxy_test_app(mock_server.uri()).await;
+
+        let req = proxy_request("/opds/proxy/api/items/abc/cover");
+        let response = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
     #[test]
     fn test_opds2_serialization_root() {
         use crate::models::Library;

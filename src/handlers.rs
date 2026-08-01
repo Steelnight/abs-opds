@@ -728,8 +728,27 @@ pub async fn proxy_handler(
     let path = req.uri().path();
     let target_path = path.strip_prefix("/opds/proxy").unwrap_or(path);
 
-    if target_path.contains("..") {
-        return (StatusCode::BAD_REQUEST, "Invalid path").into_response();
+    // The raw path is still percent-encoded, so checking it directly for
+    // ".." misses %2e%2e, and %2F can hide an extra "/" that turns what
+    // looked like a single opaque segment into a traversal once decoded.
+    // Decode once and validate the decoded form; forward the original
+    // (still-encoded) target_path unchanged so ABS decodes it exactly as
+    // the client intended.
+    let decoded_path = match percent_encoding::percent_decode_str(target_path).decode_utf8() {
+        Ok(d) => d,
+        Err(_) => return (StatusCode::FORBIDDEN, "Forbidden").into_response(),
+    };
+
+    static PROXY_ALLOWED_PATH: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let allowed = PROXY_ALLOWED_PATH.get_or_init(|| {
+        regex::Regex::new(r"^/api/items/[^/]+/(cover|ebook|download)$")
+            .expect("valid proxy allowlist regex")
+    });
+
+    // The allowlist alone doesn't reject ".." as a literal item-id segment
+    // (it contains no '/', so [^/]+ matches it), so both checks stay.
+    if decoded_path.contains("..") || !allowed.is_match(&decoded_path) {
+        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
     }
 
     let target_url = format!("{}{}", state.config.abs_url, target_path);

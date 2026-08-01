@@ -393,7 +393,7 @@ fn bench_proxy_handler(c: &mut Criterion) {
 
     rt.block_on(async {
         Mock::given(method("GET"))
-            .and(path("/some/image.jpg"))
+            .and(path("/api/items/bench-item/cover"))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8; 1024]))
             .mount(&mock_server)
             .await;
@@ -416,7 +416,7 @@ fn bench_proxy_handler(c: &mut Criterion) {
     group.bench_with_input(BenchmarkId::new("proxy_request", 1), &n_items, |b, &_| {
         b.to_async(&rt).iter(|| async {
             let req = Request::builder()
-                .uri("/opds/proxy/some/image.jpg")
+                .uri("/opds/proxy/api/items/bench-item/cover")
                 .header("Authorization", "Basic YmVuY2hfdXNlcjpwYXNz")
                 .body(Body::empty())
                 .unwrap();
@@ -429,7 +429,7 @@ fn bench_proxy_handler(c: &mut Criterion) {
     let start = std::time::Instant::now();
     rt.block_on(async {
         let req = Request::builder()
-            .uri("/opds/proxy/some/image.jpg")
+            .uri("/opds/proxy/api/items/bench-item/cover")
             .body(Body::empty())
             .unwrap();
         let _ = app.clone().oneshot(req).await.unwrap();
