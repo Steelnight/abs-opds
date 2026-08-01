@@ -319,6 +319,7 @@ fn bench_proxy_handler(c: &mut Criterion) {
         b.to_async(&rt).iter(|| async {
                 let req = Request::builder()
                 .uri("/opds/proxy/some/image.jpg")
+                .header("Authorization", "Basic YmVuY2hfdXNlcjpwYXNz")
                 .body(Body::empty())
                 .unwrap();
 
