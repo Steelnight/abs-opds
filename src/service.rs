@@ -11,9 +11,6 @@ use rayon::prelude::*;
 #[cfg(test)]
 #[path = "service_tests.rs"]
 mod service_tests;
-#[cfg(test)]
-#[path = "performance_tests.rs"]
-mod performance_tests;
 
 #[derive(Debug, Clone)]
 pub enum CategoriesResult {

@@ -396,7 +396,8 @@ fn bench_xml_layer(c: &mut Criterion) {
                         Some(&lib),
                         Some(&user),
                         Some((0, 100, n_items, n_items/100)),
-                        "/opds"
+                        "/opds",
+                        true,
                     ).unwrap()
             })
         });
@@ -416,7 +417,8 @@ fn bench_xml_layer(c: &mut Criterion) {
                 Some(&lib),
                 Some(&user),
                 Some((0, 100, n_items, n_items/100)),
-                "/opds"
+                "/opds",
+                true,
             ).unwrap();
         let duration = start.elapsed().as_nanos() as f64;
         REPORTER.add_entry("xml_build_entries", n_items, n_authors, n_genres, duration);
