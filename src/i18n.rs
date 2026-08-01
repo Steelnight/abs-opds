@@ -8,6 +8,12 @@ pub struct I18n {
     fallback_language: String,
 }
 
+impl Default for I18n {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl I18n {
     pub fn new() -> Self {
         let mut localizations = HashMap::new();
@@ -52,7 +58,7 @@ impl I18n {
         // Fallback
         if language != &self.fallback_language {
             if let Some(lang_map) = localizations.get(&self.fallback_language) {
-                 if let Some(val) = lang_map.get(key) {
+                if let Some(val) = lang_map.get(key) {
                     if let Some(s) = val.as_str() {
                         return s.to_string();
                     }
