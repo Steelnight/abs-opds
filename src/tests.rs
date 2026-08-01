@@ -484,6 +484,90 @@ mod suite {
         );
     }
 
+    #[tokio::test]
+    async fn test_handler_panic_returns_500_instead_of_crashing() {
+        // AppConfig::validate() now rejects OPDS_PAGE_SIZE=0 at startup, but
+        // CatchPanicLayer is defense in depth against *any* handler panic,
+        // not just this one. Construct a config that bypasses validate()
+        // (as build_app_state_with_mock always does) with page_size=0, the
+        // exact value that used to take the whole connection down via a
+        // divide-by-zero in total_items.div_ceil(page_size).
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let mut mock_client = MockAbsClient::new();
+
+        let lib_detail = AbsLibrary {
+            id: "lib1".to_string(),
+            name: "Lib 1".to_string(),
+            icon: None,
+        };
+        mock_client
+            .expect_get_library()
+            .returning(move |_, _| Ok(lib_detail.clone()));
+
+        let item = AbsItemsResponse {
+            results: vec![crate::models::AbsItemResult {
+                id: "item1".to_string(),
+                media: crate::models::AbsMedia {
+                    ebook_format: Some("epub".to_string()),
+                    metadata: crate::models::AbsMetadata {
+                        title: Some("Title".to_string()),
+                        subtitle: None,
+                        description: None,
+                        genres: None,
+                        tags: None,
+                        publisher: None,
+                        isbn: None,
+                        language: None,
+                        published_year: None,
+                        author_name: None,
+                        narrator_name: None,
+                        series_name: None,
+                    },
+                },
+            }],
+        };
+        mock_client
+            .expect_get_items()
+            .returning(move |_, _| Ok(item.clone()));
+
+        let user_ref = InternalUser {
+            name: "test_user".to_string(),
+            api_key: "test_token".to_string(),
+            password: Some("pass".to_string()),
+        };
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "test_user:test_token:pass".to_string(),
+            internal_users: vec![user_ref],
+            show_audiobooks: true,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 0,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        let req = Request::builder()
+            .uri("/opds/libraries/lib1")
+            .header("Authorization", "Basic dGVzdF91c2VyOnBhc3M=")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
     #[test]
     fn test_xml_escaping() {
         let mut writer = Writer::new(Cursor::new(Vec::new()));

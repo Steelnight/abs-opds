@@ -3,6 +3,7 @@ use axum::{
     Router,
 };
 use std::sync::Arc;
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -99,6 +100,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route("/opds/proxy/{*any}", any(handlers::proxy_handler))
         .layer(TraceLayer::new_for_http())
+        .layer(CatchPanicLayer::new())
         .with_state(state)
 }
 
