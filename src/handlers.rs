@@ -44,7 +44,8 @@ pub async fn get_opds_root(
 ) -> Response {
     match state.service.get_libraries(&user).await {
         Ok(libraries) => {
-            let updated_time = chrono::Utc::now().to_rfc3339();
+            let updated_time =
+                chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             if wants_opds_v2(&headers) {
                 let json = if libraries.len() == 1 {
                     let library_id = &libraries[0].id;
@@ -103,6 +104,7 @@ pub async fn get_opds_root(
                     None,
                     &format!("/opds/libraries/{}", library_id),
                     false,
+                    &updated_time,
                 )
                 .unwrap_or_else(|_| String::new());
 
@@ -148,6 +150,7 @@ pub async fn get_opds_root(
                 None,
                 "/opds",
                 false,
+                &updated_time,
             )
             .unwrap_or_else(|_| String::new());
 
@@ -204,7 +207,7 @@ pub async fn get_library(
     headers: HeaderMap,
 ) -> Response {
     let lang = headers.get("accept-language").and_then(|h| h.to_str().ok());
-    let updated_time = chrono::Utc::now().to_rfc3339();
+    let updated_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
 
     if wants_opds_v2(&headers) {
         if query.categories.is_some() {
@@ -359,6 +362,7 @@ pub async fn get_library(
             None,
             &format!("/opds/libraries/{}", library_id),
             false,
+            &updated_time,
         )
         .unwrap_or_else(|_| String::new());
 
@@ -453,6 +457,7 @@ pub async fn get_library(
                         Some((query.page, page_size, total_items, total_pages)),
                         &url_base,
                         true,
+                        &updated_time,
                     )
                     .unwrap_or_else(|_| String::new());
 

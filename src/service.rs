@@ -296,7 +296,7 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
         type_: &str,
         query: &crate::handlers::LibraryQuery,
     ) -> Result<String> {
-        let updated_time = chrono::Utc::now().to_rfc3339();
+        let updated_time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
         let lib_data = self.client.get_library(user, library_id).await?;
         let library = Library {
             id: lib_data.id,
@@ -336,6 +336,7 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                 None,
                 &format!("/opds/libraries/{}/{}", library_id, type_),
                 false,
+                &updated_time,
             )
             .map_err(|e| e.into()),
             CategoriesResult::Items { items, page_info } => {
@@ -366,6 +367,7 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
                     page_info,
                     &url_base,
                     false,
+                    &updated_time,
                 )
                 .map_err(|e| e.into())
             }

@@ -539,6 +539,7 @@ fn bench_xml_layer(c: &mut Criterion) {
                         Some((0, 100, n_items, n_items / 100)),
                         "/opds",
                         true,
+                        &updated_time,
                     )
                     .unwrap()
                 })
@@ -569,6 +570,7 @@ fn bench_xml_layer(c: &mut Criterion) {
             Some((0, 100, n_items, n_items / 100)),
             "/opds",
             true,
+            &updated_time,
         )
         .unwrap();
         let duration = start.elapsed().as_nanos() as f64;

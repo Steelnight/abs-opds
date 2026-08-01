@@ -32,6 +32,7 @@ mod suite {
             None,
             "/opds",
             false,
+            "2026-06-02T12:00:00Z",
         )
         .expect("Failed to build XML");
 
@@ -40,6 +41,46 @@ mod suite {
         assert!(xml.contains("<feed xmlns=\"http://www.w3.org/2005/Atom\""));
         assert!(xml.contains("<author><name>ABS-OPDS</name></author>"));
         assert!(xml.contains("<link rel=\"self\" type=\"application/atom+xml;profile=opds-catalog;kind=navigation\" href=\"/opds\"/>"));
+    }
+
+    #[test]
+    fn test_build_opds_skeleton_uses_supplied_updated_time() {
+        // Regression test: build_opds_skeleton previously called Utc::now()
+        // internally instead of using the updated_time callers already
+        // computed, so every response body -- and every ETag derived from
+        // it -- was unique even for back-to-back identical requests.
+        let xml = OpdsBuilder::build_opds_skeleton(
+            "test_id",
+            "Test Title",
+            |_| Ok(()),
+            None,
+            None,
+            None,
+            "/opds",
+            false,
+            "2020-01-01T00:00:00Z",
+        )
+        .expect("Failed to build XML");
+
+        assert!(xml.contains("<updated>2020-01-01T00:00:00Z</updated>"));
+
+        let xml_again = OpdsBuilder::build_opds_skeleton(
+            "test_id",
+            "Test Title",
+            |_| Ok(()),
+            None,
+            None,
+            None,
+            "/opds",
+            false,
+            "2020-01-01T00:00:00Z",
+        )
+        .expect("Failed to build XML");
+
+        assert_eq!(
+            xml, xml_again,
+            "identical inputs must produce identical output for ETags to work"
+        );
     }
 
     #[test]
@@ -272,6 +313,101 @@ mod suite {
             "application/opensearchdescription+xml".to_string(),
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn test_conditional_get_returns_304_on_repeat_request() {
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let mut mock_client = MockAbsClient::new();
+
+        let user_ref = InternalUser {
+            name: "test_user".to_string(),
+            api_key: "test_token".to_string(),
+            password: None,
+        };
+
+        mock_client.expect_login().returning(move |_, _| {
+            Ok(InternalUser {
+                name: "test_user".to_string(),
+                api_key: "test_token".to_string(),
+                password: Some("pass".to_string()),
+            })
+        });
+
+        // A single library routes /opds straight to the Categories skeleton,
+        // exercising the fixed build_opds_skeleton path directly.
+        let libs = vec![AbsLibrary {
+            id: "lib1".to_string(),
+            name: "Lib 1".to_string(),
+            icon: None,
+        }];
+        mock_client
+            .expect_get_libraries()
+            .returning(move |_| Ok(libs.clone()));
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "test_user:test_token:pass".to_string(),
+            internal_users: vec![user_ref.clone()],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        let get_opds = |app: axum::Router| async move {
+            let req = Request::builder()
+                .uri("/opds")
+                .header("Authorization", "Basic dGVzdF91c2VyOnBhc3M=")
+                .body(axum::body::Body::empty())
+                .unwrap();
+            app.oneshot(req).await.unwrap()
+        };
+
+        let first = get_opds(app.clone()).await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let etag = first
+            .headers()
+            .get(axum::http::header::ETAG)
+            .expect("first response must carry an ETag")
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        let second = get_opds(app.clone()).await;
+        assert_eq!(second.status(), StatusCode::OK);
+        let etag_again = second
+            .headers()
+            .get(axum::http::header::ETAG)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(
+            etag, etag_again,
+            "two back-to-back requests must produce the same ETag"
+        );
+
+        let conditional_req = Request::builder()
+            .uri("/opds")
+            .header("Authorization", "Basic dGVzdF91c2VyOnBhc3M=")
+            .header(axum::http::header::IF_NONE_MATCH, etag)
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let conditional_resp = app.clone().oneshot(conditional_req).await.unwrap();
+        assert_eq!(conditional_resp.status(), StatusCode::NOT_MODIFIED);
     }
 
     #[test]

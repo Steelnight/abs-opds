@@ -23,6 +23,7 @@ impl OpdsBuilder {
         page_info: Option<(usize, usize, usize, usize)>,
         url_base: &str,
         is_acquisition: bool,
+        updated_time: &str,
     ) -> Result<String, quick_xml::Error>
     where
         F: FnOnce(&mut Writer<Cursor<Vec<u8>>>) -> Result<(), quick_xml::Error>,
@@ -54,7 +55,7 @@ impl OpdsBuilder {
         writer.write_event(Event::End(BytesEnd::new("labels")))?;
         writer.write_event(Event::End(BytesEnd::new("authentication")))?;
 
-        Self::write_elem(&mut writer, "updated", &chrono::Utc::now().to_rfc3339())?;
+        Self::write_elem(&mut writer, "updated", updated_time)?;
 
         let feed_kind = if is_acquisition {
             "acquisition"
