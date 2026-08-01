@@ -323,6 +323,30 @@ mod suite {
         );
     }
 
+    #[test]
+    fn test_page_size_zero_rejected() {
+        let config = crate::models::AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "my_user:my_token:pass".to_string(),
+            internal_users: vec![InternalUser {
+                name: "my_user".to_string(),
+                api_key: "my_token".to_string(),
+                password: Some("pass".to_string()),
+            }],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 0,
+        };
+
+        let err = config.validate().expect_err("page_size=0 must be rejected");
+        assert!(err.to_string().contains("OPDS_PAGE_SIZE"));
+    }
+
     #[tokio::test]
     async fn test_api_client_login_cache() {
         use wiremock::matchers::{body_json, method, path};

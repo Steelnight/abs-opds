@@ -234,6 +234,9 @@ impl AppConfig {
         if self.abs_url.trim().is_empty() {
             return Err(anyhow::anyhow!("ABS_URL cannot be empty"));
         }
+        if self.opds_page_size == 0 {
+            return Err(anyhow::anyhow!("OPDS_PAGE_SIZE must be greater than 0"));
+        }
         if !self.opds_no_auth && self.internal_users.is_empty() {
             return Err(anyhow::anyhow!(
                 "No users configured and OPDS_NO_AUTH is false. Please set OPDS_USERS or enable OPDS_NO_AUTH."
