@@ -1,12 +1,14 @@
 #[cfg(test)]
-mod tests {
-    use crate::models::{Library, LibraryItem, Author, InternalUser, AbsLibrary, AbsItemsResponse, AppConfig};
+mod suite {
+    use crate::models::{
+        AbsItemsResponse, AbsLibrary, AppConfig, Author, InternalUser, Library, LibraryItem,
+    };
     use crate::xml::OpdsBuilder;
+    use async_trait::async_trait;
+    use mockall::mock;
     use quick_xml::Writer;
     use std::io::Cursor;
     use std::sync::Arc;
-    use async_trait::async_trait;
-    use mockall::mock;
 
     mock! {
         pub AbsClient {}
@@ -30,7 +32,8 @@ mod tests {
             None,
             "/opds",
             false,
-        ).expect("Failed to build XML");
+        )
+        .expect("Failed to build XML");
 
         assert!(xml.contains("<id>test_id</id>"));
         assert!(xml.contains("<title>Test Title</title>"));
@@ -48,7 +51,8 @@ mod tests {
         };
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
-        OpdsBuilder::build_library_entry(&mut writer, &lib, "2026-06-02T12:00:00Z").expect("Failed to build entry");
+        OpdsBuilder::build_library_entry(&mut writer, &lib, "2026-06-02T12:00:00Z")
+            .expect("Failed to build entry");
 
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("<id>lib1</id>"));
@@ -69,8 +73,12 @@ mod tests {
             isbn: Some("978-3-16-148410-0".to_string()),
             language: Some("en".to_string()),
             published_year: Some("2023".to_string()),
-            authors: vec![Author { name: "Author Name".to_string() }],
-            narrators: vec![Author { name: "Narrator Name".to_string() }],
+            authors: vec![Author {
+                name: "Author Name".to_string(),
+            }],
+            narrators: vec![Author {
+                name: "Narrator Name".to_string(),
+            }],
             series: vec![],
             format: Some("epub".to_string()),
         };
@@ -83,7 +91,15 @@ mod tests {
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
         let mut url_buf = String::new();
-        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000", "2026-06-02T12:00:00Z", &mut url_buf).expect("Failed to build entry");
+        OpdsBuilder::build_item_entry(
+            &mut writer,
+            &item,
+            &user,
+            "http://localhost:3000",
+            "2026-06-02T12:00:00Z",
+            &mut url_buf,
+        )
+        .expect("Failed to build entry");
 
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("<id>urn:uuid:item1</id>"));
@@ -92,7 +108,9 @@ mod tests {
         assert!(entry.contains("application/epub+zip"));
         assert!(entry.contains("token=token"));
         assert!(entry.contains("<dcterms:publisher>Publisher</dcterms:publisher>"));
-        assert!(entry.contains("<dcterms:identifier>urn:isbn:978-3-16-148410-0</dcterms:identifier>"));
+        assert!(
+            entry.contains("<dcterms:identifier>urn:isbn:978-3-16-148410-0</dcterms:identifier>")
+        );
         assert!(entry.contains("<dcterms:issued>2023</dcterms:issued>"));
         assert!(entry.contains("<dcterms:language>en</dcterms:language>"));
         assert!(entry.contains("<dcterms:contributor>Narrator Name</dcterms:contributor>"));
@@ -126,18 +144,28 @@ mod tests {
 
         let mut writer = Writer::new(Cursor::new(Vec::new()));
         let mut url_buf = String::new();
-        OpdsBuilder::build_item_entry(&mut writer, &item, &user, "http://localhost:3000", "2026-06-02T12:00:00Z", &mut url_buf).expect("Failed to build entry");
+        OpdsBuilder::build_item_entry(
+            &mut writer,
+            &item,
+            &user,
+            "http://localhost:3000",
+            "2026-06-02T12:00:00Z",
+            &mut url_buf,
+        )
+        .expect("Failed to build entry");
 
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
-        assert!(entry.contains("<content type=\"text\">Escaping &lt;test&gt; &amp; &quot;quotes&quot;</content>"));
+        assert!(entry.contains(
+            "<content type=\"text\">Escaping &lt;test&gt; &amp; &quot;quotes&quot;</content>"
+        ));
     }
 
     #[tokio::test]
     async fn test_routes_content_type_headers() {
-        use tower::ServiceExt;
-        use axum::http::{Request, StatusCode};
         use crate::build_app_state_with_mock;
         use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
 
         let mut mock_client = MockAbsClient::new();
 
@@ -147,26 +175,42 @@ mod tests {
             password: None,
         };
 
-        mock_client.expect_login()
-            .returning(move |_, _| Ok(InternalUser {
+        mock_client.expect_login().returning(move |_, _| {
+            Ok(InternalUser {
                 name: "test_user".to_string(),
                 api_key: "test_token".to_string(),
                 password: Some("pass".to_string()),
-            }));
+            })
+        });
 
         let libs = vec![
-            AbsLibrary { id: "lib1".to_string(), name: "Lib 1".to_string(), icon: None },
-            AbsLibrary { id: "lib2".to_string(), name: "Lib 2".to_string(), icon: None },
+            AbsLibrary {
+                id: "lib1".to_string(),
+                name: "Lib 1".to_string(),
+                icon: None,
+            },
+            AbsLibrary {
+                id: "lib2".to_string(),
+                name: "Lib 2".to_string(),
+                icon: None,
+            },
         ];
 
-        mock_client.expect_get_libraries()
+        mock_client
+            .expect_get_libraries()
             .returning(move |_| Ok(libs.clone()));
 
-        let lib_detail = AbsLibrary { id: "lib1".to_string(), name: "Lib 1".to_string(), icon: None };
-        mock_client.expect_get_library()
+        let lib_detail = AbsLibrary {
+            id: "lib1".to_string(),
+            name: "Lib 1".to_string(),
+            icon: None,
+        };
+        mock_client
+            .expect_get_library()
             .returning(move |_, _| Ok(lib_detail.clone()));
 
-        mock_client.expect_get_items()
+        mock_client
+            .expect_get_items()
             .returning(move |_, _| Ok(AbsItemsResponse { results: vec![] }));
 
         let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
@@ -197,21 +241,50 @@ mod tests {
 
             let response = app.oneshot(req).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK);
-            let ct = response.headers().get(axum::http::header::CONTENT_TYPE).unwrap();
+            let ct = response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap();
             assert_eq!(ct.to_str().unwrap(), &expected_ct);
         };
 
-        request_and_check(app.clone(), "/opds".to_string(), "application/atom+xml;profile=opds-catalog;kind=navigation".to_string()).await;
-        request_and_check(app.clone(), "/opds/libraries/lib1".to_string(), "application/atom+xml;profile=opds-catalog;kind=acquisition".to_string()).await;
-        request_and_check(app.clone(), "/opds/libraries/lib1?categories=true".to_string(), "application/atom+xml;profile=opds-catalog;kind=navigation".to_string()).await;
-        request_and_check(app.clone(), "/opds/libraries/lib1/search-definition".to_string(), "application/opensearchdescription+xml".to_string()).await;
+        request_and_check(
+            app.clone(),
+            "/opds".to_string(),
+            "application/atom+xml;profile=opds-catalog;kind=navigation".to_string(),
+        )
+        .await;
+        request_and_check(
+            app.clone(),
+            "/opds/libraries/lib1".to_string(),
+            "application/atom+xml;profile=opds-catalog;kind=acquisition".to_string(),
+        )
+        .await;
+        request_and_check(
+            app.clone(),
+            "/opds/libraries/lib1?categories=true".to_string(),
+            "application/atom+xml;profile=opds-catalog;kind=navigation".to_string(),
+        )
+        .await;
+        request_and_check(
+            app.clone(),
+            "/opds/libraries/lib1/search-definition".to_string(),
+            "application/opensearchdescription+xml".to_string(),
+        )
+        .await;
     }
 
     #[test]
     fn test_xml_escaping() {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
-        OpdsBuilder::write_link(&mut writer, "alternate", "text/html", "Dungeons & Dragons", "http://localhost:3000/opds?q=foo&type=epub")
-            .expect("Failed to write link");
+        OpdsBuilder::write_link(
+            &mut writer,
+            "alternate",
+            "text/html",
+            "Dungeons & Dragons",
+            "http://localhost:3000/opds?q=foo&type=epub",
+        )
+        .expect("Failed to write link");
 
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("title=\"Dungeons &amp; Dragons\""));
@@ -244,13 +317,16 @@ mod tests {
         assert_eq!(config.internal_users.len(), 1);
         assert_eq!(config.internal_users[0].name, "my_user");
         assert_eq!(config.internal_users[0].api_key, "my_token");
-        assert_eq!(config.internal_users[0].password.as_deref(), Some("my:pass:with:colons"));
+        assert_eq!(
+            config.internal_users[0].password.as_deref(),
+            Some("my:pass:with:colons")
+        );
     }
 
     #[tokio::test]
     async fn test_api_client_login_cache() {
-        use wiremock::{MockServer, Mock, ResponseTemplate};
-        use wiremock::matchers::{method, path, body_json};
+        use wiremock::matchers::{body_json, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -312,7 +388,10 @@ mod tests {
     fn test_get_token_from_query() {
         use crate::auth::get_token_from_query;
         assert_eq!(get_token_from_query("token=my_secret"), Some("my_secret"));
-        assert_eq!(get_token_from_query("foo=bar&token=secret2&baz=qux"), Some("secret2"));
+        assert_eq!(
+            get_token_from_query("foo=bar&token=secret2&baz=qux"),
+            Some("secret2")
+        );
         assert_eq!(get_token_from_query("foo=bar"), None);
     }
 
@@ -322,40 +401,82 @@ mod tests {
         use crate::opds2::Opds2Builder;
 
         let libs = vec![
-            Library { id: "lib1".to_string(), name: "First Lib".to_string(), icon: None },
-            Library { id: "lib2".to_string(), name: "Second Lib".to_string(), icon: None },
+            Library {
+                id: "lib1".to_string(),
+                name: "First Lib".to_string(),
+                icon: None,
+            },
+            Library {
+                id: "lib2".to_string(),
+                name: "Second Lib".to_string(),
+                icon: None,
+            },
         ];
 
         let json_str = Opds2Builder::build_root(&libs, "2026-06-02T12:00:00Z");
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
 
-        assert_eq!(parsed.get("metadata").unwrap().get("title").unwrap().as_str().unwrap(), "Libraries");
+        assert_eq!(
+            parsed
+                .get("metadata")
+                .unwrap()
+                .get("title")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "Libraries"
+        );
         let navigation = parsed.get("navigation").unwrap().as_array().unwrap();
         assert_eq!(navigation.len(), 2);
-        assert_eq!(navigation[0].get("title").unwrap().as_str().unwrap(), "First Lib");
-        assert_eq!(navigation[0].get("href").unwrap().as_str().unwrap(), "/opds/libraries/lib1?categories=true");
+        assert_eq!(
+            navigation[0].get("title").unwrap().as_str().unwrap(),
+            "First Lib"
+        );
+        assert_eq!(
+            navigation[0].get("href").unwrap().as_str().unwrap(),
+            "/opds/libraries/lib1?categories=true"
+        );
     }
 
     #[test]
     fn test_opds2_serialization_categories() {
-        use crate::opds2::Opds2Builder;
         use crate::i18n::I18n;
+        use crate::opds2::Opds2Builder;
 
         let i18n = I18n::new();
-        let json_str = Opds2Builder::build_categories_root("lib1", &i18n, None, "2026-06-02T12:00:00Z");
+        let json_str =
+            Opds2Builder::build_categories_root("lib1", &i18n, None, "2026-06-02T12:00:00Z");
         let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
 
-        assert_eq!(parsed.get("metadata").unwrap().get("title").unwrap().as_str().unwrap(), "Categories");
+        assert_eq!(
+            parsed
+                .get("metadata")
+                .unwrap()
+                .get("title")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "Categories"
+        );
         let navigation = parsed.get("navigation").unwrap().as_array().unwrap();
         assert_eq!(navigation.len(), 5);
-        assert_eq!(navigation[0].get("title").unwrap().as_str().unwrap(), "All books");
-        assert_eq!(navigation[0].get("href").unwrap().as_str().unwrap(), "/opds/libraries/lib1");
-        assert_eq!(navigation[1].get("title").unwrap().as_str().unwrap(), "Authors");
+        assert_eq!(
+            navigation[0].get("title").unwrap().as_str().unwrap(),
+            "All books"
+        );
+        assert_eq!(
+            navigation[0].get("href").unwrap().as_str().unwrap(),
+            "/opds/libraries/lib1"
+        );
+        assert_eq!(
+            navigation[1].get("title").unwrap().as_str().unwrap(),
+            "Authors"
+        );
     }
 
     #[test]
     fn test_opds2_serialization_publications() {
-        use crate::models::{LibraryItem, Author, InternalUser};
+        use crate::models::{Author, InternalUser, LibraryItem};
         use crate::opds2::Opds2Builder;
 
         let item = LibraryItem {
@@ -369,8 +490,12 @@ mod tests {
             isbn: Some("123456789".to_string()),
             language: Some("en".to_string()),
             published_year: Some("2025".to_string()),
-            authors: vec![Author { name: "Author Name".to_string() }],
-            narrators: vec![Author { name: "Narrator Name".to_string() }],
+            authors: vec![Author {
+                name: "Author Name".to_string(),
+            }],
+            narrators: vec![Author {
+                name: "Narrator Name".to_string(),
+            }],
             series: vec!["Super Series".to_string()],
             format: Some("epub".to_string()),
         };
@@ -392,41 +517,72 @@ mod tests {
             "/opds/libraries/lib_id",
         );
 
-        let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("Failed to parse JSON");
-        
+        let parsed: serde_json::Value =
+            serde_json::from_str(&json_str).expect("Failed to parse JSON");
+
         let metadata = parsed.get("metadata").unwrap();
-        assert_eq!(metadata.get("title").unwrap().as_str().unwrap(), "My Library");
+        assert_eq!(
+            metadata.get("title").unwrap().as_str().unwrap(),
+            "My Library"
+        );
         assert_eq!(metadata.get("numberOfItems").unwrap().as_u64().unwrap(), 1);
         assert_eq!(metadata.get("itemsPerPage").unwrap().as_u64().unwrap(), 10);
         assert_eq!(metadata.get("currentPage").unwrap().as_u64().unwrap(), 1);
 
         let links = parsed.get("links").unwrap().as_array().unwrap();
-        let search_link = links.iter().find(|l| l.get("rel").and_then(|r| r.as_str()) == Some("search")).unwrap();
-        assert_eq!(search_link.get("href").unwrap().as_str().unwrap(), "/opds/libraries/lib_id?q={query}");
-        assert_eq!(search_link.get("templated").unwrap().as_bool().unwrap(), true);
+        let search_link = links
+            .iter()
+            .find(|l| l.get("rel").and_then(|r| r.as_str()) == Some("search"))
+            .unwrap();
+        assert_eq!(
+            search_link.get("href").unwrap().as_str().unwrap(),
+            "/opds/libraries/lib_id?q={query}"
+        );
+        assert!(search_link.get("templated").unwrap().as_bool().unwrap());
 
         let publications = parsed.get("publications").unwrap().as_array().unwrap();
         assert_eq!(publications.len(), 1);
         let pub1 = &publications[0];
         let p_meta = pub1.get("metadata").unwrap();
         assert_eq!(p_meta.get("title").unwrap().as_str().unwrap(), "Book Title");
-        assert_eq!(p_meta.get("subtitle").unwrap().as_str().unwrap(), "Subtitle Details");
-        assert_eq!(p_meta.get("@type").unwrap().as_str().unwrap(), "http://schema.org/Book");
-        assert_eq!(p_meta.get("identifier").unwrap().as_str().unwrap(), "urn:uuid:item1");
-        assert_eq!(p_meta.get("publisher").unwrap().as_str().unwrap(), "Super Publisher");
+        assert_eq!(
+            p_meta.get("subtitle").unwrap().as_str().unwrap(),
+            "Subtitle Details"
+        );
+        assert_eq!(
+            p_meta.get("@type").unwrap().as_str().unwrap(),
+            "http://schema.org/Book"
+        );
+        assert_eq!(
+            p_meta.get("identifier").unwrap().as_str().unwrap(),
+            "urn:uuid:item1"
+        );
+        assert_eq!(
+            p_meta.get("publisher").unwrap().as_str().unwrap(),
+            "Super Publisher"
+        );
         assert_eq!(p_meta.get("published").unwrap().as_str().unwrap(), "2025");
-        
+
         let author = p_meta.get("author").unwrap().as_array().unwrap();
         assert_eq!(author.len(), 1);
-        assert_eq!(author[0].get("name").unwrap().as_str().unwrap(), "Author Name");
+        assert_eq!(
+            author[0].get("name").unwrap().as_str().unwrap(),
+            "Author Name"
+        );
 
         let narrator = p_meta.get("narrator").unwrap().as_array().unwrap();
         assert_eq!(narrator.len(), 1);
-        assert_eq!(narrator[0].get("name").unwrap().as_str().unwrap(), "Narrator Name");
+        assert_eq!(
+            narrator[0].get("name").unwrap().as_str().unwrap(),
+            "Narrator Name"
+        );
 
         let belongs_to = p_meta.get("belongsTo").unwrap();
         let series = belongs_to.get("series").unwrap();
-        assert_eq!(series.get("name").unwrap().as_str().unwrap(), "Super Series");
+        assert_eq!(
+            series.get("name").unwrap().as_str().unwrap(),
+            "Super Series"
+        );
 
         let categories = p_meta.get("category").unwrap().as_array().unwrap();
         assert!(categories.iter().any(|c| c.as_str() == Some("Fantasy")));
@@ -434,28 +590,34 @@ mod tests {
 
         let p_links = pub1.get("links").unwrap().as_array().unwrap();
         assert_eq!(p_links.len(), 2);
-        assert!(p_links.iter().any(|l| l.get("rel").unwrap().as_str() == Some("download") && l.get("type").unwrap().as_str() == Some("application/epub+zip")));
+        assert!(p_links
+            .iter()
+            .any(|l| l.get("rel").unwrap().as_str() == Some("download")
+                && l.get("type").unwrap().as_str() == Some("application/epub+zip")));
 
         let p_images = pub1.get("images").unwrap().as_array().unwrap();
         assert_eq!(p_images.len(), 2);
-        assert!(p_images.iter().any(|img| img.get("type").unwrap().as_str() == Some("image/webp")));
+        assert!(p_images
+            .iter()
+            .any(|img| img.get("type").unwrap().as_str() == Some("image/webp")));
     }
 
     #[tokio::test]
     async fn test_routes_content_type_headers_opds2() {
-        use tower::ServiceExt;
-        use axum::http::{Request, StatusCode};
         use crate::build_app_state_with_mock;
         use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
 
         let mut mock_client = MockAbsClient::new();
 
-        mock_client.expect_login()
-            .returning(move |_, _| Ok(InternalUser {
+        mock_client.expect_login().returning(move |_, _| {
+            Ok(InternalUser {
                 name: "test_user".to_string(),
                 api_key: "test_token".to_string(),
                 password: Some("pass".to_string()),
-            }));
+            })
+        });
 
         let user_ref = InternalUser {
             name: "test_user".to_string(),
@@ -464,18 +626,33 @@ mod tests {
         };
 
         let libs = vec![
-            AbsLibrary { id: "lib1".to_string(), name: "Lib 1".to_string(), icon: None },
-            AbsLibrary { id: "lib2".to_string(), name: "Lib 2".to_string(), icon: None },
+            AbsLibrary {
+                id: "lib1".to_string(),
+                name: "Lib 1".to_string(),
+                icon: None,
+            },
+            AbsLibrary {
+                id: "lib2".to_string(),
+                name: "Lib 2".to_string(),
+                icon: None,
+            },
         ];
 
-        mock_client.expect_get_libraries()
+        mock_client
+            .expect_get_libraries()
             .returning(move |_| Ok(libs.clone()));
 
-        let lib_detail = AbsLibrary { id: "lib1".to_string(), name: "Lib 1".to_string(), icon: None };
-        mock_client.expect_get_library()
+        let lib_detail = AbsLibrary {
+            id: "lib1".to_string(),
+            name: "Lib 1".to_string(),
+            icon: None,
+        };
+        mock_client
+            .expect_get_library()
             .returning(move |_, _| Ok(lib_detail.clone()));
 
-        mock_client.expect_get_items()
+        mock_client
+            .expect_get_items()
             .returning(move |_, _| Ok(AbsItemsResponse { results: vec![] }));
 
         let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
@@ -497,7 +674,10 @@ mod tests {
         let state = build_app_state_with_mock(config, mock_client_arc).await;
         let app = build_router(state);
 
-        let request_and_check = |app: axum::Router, path: String, accept_header: Option<String>, expected_ct: String| async move {
+        let request_and_check = |app: axum::Router,
+                                 path: String,
+                                 accept_header: Option<String>,
+                                 expected_ct: String| async move {
             let mut req_builder = Request::builder()
                 .uri(&path)
                 .header("Authorization", "Basic dGVzdF91c2VyOnBhc3M=");
@@ -508,11 +688,16 @@ mod tests {
 
             let response = app.oneshot(req).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK);
-            let ct = response.headers().get(axum::http::header::CONTENT_TYPE).unwrap();
+            let ct = response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .unwrap();
             assert_eq!(ct.to_str().unwrap(), &expected_ct);
 
             if expected_ct.contains("application/opds+json") {
-                let body_bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+                let body_bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+                    .await
+                    .unwrap();
                 let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
                 let v: serde_json::Value = serde_json::from_str(&body_str).unwrap();
                 assert!(v.get("metadata").is_some());
@@ -520,11 +705,41 @@ mod tests {
             }
         };
 
-        request_and_check(app.clone(), "/opds".to_string(), Some("application/opds+json".to_string()), "application/opds+json".to_string()).await;
-        request_and_check(app.clone(), "/opds/libraries/lib1".to_string(), Some("application/opds+json".to_string()), "application/opds+json".to_string()).await;
-        request_and_check(app.clone(), "/opds/libraries/lib1?categories=true".to_string(), Some("application/opds+json".to_string()), "application/opds+json".to_string()).await;
-        
-        request_and_check(app.clone(), "/opds".to_string(), None, "application/atom+xml;profile=opds-catalog;kind=navigation".to_string()).await;
-        request_and_check(app.clone(), "/opds/libraries/lib1".to_string(), None, "application/atom+xml;profile=opds-catalog;kind=acquisition".to_string()).await;
+        request_and_check(
+            app.clone(),
+            "/opds".to_string(),
+            Some("application/opds+json".to_string()),
+            "application/opds+json".to_string(),
+        )
+        .await;
+        request_and_check(
+            app.clone(),
+            "/opds/libraries/lib1".to_string(),
+            Some("application/opds+json".to_string()),
+            "application/opds+json".to_string(),
+        )
+        .await;
+        request_and_check(
+            app.clone(),
+            "/opds/libraries/lib1?categories=true".to_string(),
+            Some("application/opds+json".to_string()),
+            "application/opds+json".to_string(),
+        )
+        .await;
+
+        request_and_check(
+            app.clone(),
+            "/opds".to_string(),
+            None,
+            "application/atom+xml;profile=opds-catalog;kind=navigation".to_string(),
+        )
+        .await;
+        request_and_check(
+            app.clone(),
+            "/opds/libraries/lib1".to_string(),
+            None,
+            "application/atom+xml;profile=opds-catalog;kind=acquisition".to_string(),
+        )
+        .await;
     }
 }

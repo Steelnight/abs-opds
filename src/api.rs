@@ -1,16 +1,26 @@
-use crate::models::{AbsItemsResponse, AbsLibrariesResponse, AbsLibrary, AbsLoginResponse, InternalUser};
+use crate::models::{
+    AbsItemsResponse, AbsLibrariesResponse, AbsLibrary, AbsLoginResponse, InternalUser,
+};
+use async_trait::async_trait;
 use reqwest::Client;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
-use async_trait::async_trait;
 
 #[async_trait]
 pub trait AbsClient: Send + Sync {
     async fn login(&self, username: &str, password: &str) -> anyhow::Result<InternalUser>;
     async fn get_libraries(&self, user: &InternalUser) -> anyhow::Result<Vec<AbsLibrary>>;
-    async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary>;
-    async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse>;
+    async fn get_library(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsLibrary>;
+    async fn get_items(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsItemsResponse>;
 }
 
 #[derive(Clone)]
@@ -37,8 +47,10 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(base_url: String, client: Client) -> Self {
-        let token_cache: Arc<RwLock<HashMap<String, CachedSession>>> = Arc::new(RwLock::new(HashMap::new()));
-        let items_cache: Arc<RwLock<HashMap<String, CachedItems>>> = Arc::new(RwLock::new(HashMap::new()));
+        let token_cache: Arc<RwLock<HashMap<String, CachedSession>>> =
+            Arc::new(RwLock::new(HashMap::new()));
+        let items_cache: Arc<RwLock<HashMap<String, CachedItems>>> =
+            Arc::new(RwLock::new(HashMap::new()));
 
         // Active cache purge in a background task
         let token_cache_clone = token_cache.clone();
@@ -134,15 +146,22 @@ impl AbsClient for ApiClient {
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch libraries: status {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch libraries: status {}",
+                response.status()
+            ));
         }
 
         let data = response.json::<AbsLibrariesResponse>().await?;
         Ok(data.libraries)
     }
 
-    async fn get_library(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsLibrary> {
-         let url = format!("{}/api/libraries/{}", self.base_url, library_id);
+    async fn get_library(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsLibrary> {
+        let url = format!("{}/api/libraries/{}", self.base_url, library_id);
         let response = self
             .client
             .get(&url)
@@ -151,13 +170,20 @@ impl AbsClient for ApiClient {
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch library details: status {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch library details: status {}",
+                response.status()
+            ));
         }
 
         Ok(response.json::<AbsLibrary>().await?)
     }
 
-    async fn get_items(&self, user: &InternalUser, library_id: &str) -> anyhow::Result<AbsItemsResponse> {
+    async fn get_items(
+        &self,
+        user: &InternalUser,
+        library_id: &str,
+    ) -> anyhow::Result<AbsItemsResponse> {
         let cache_key = format!("{}:{}", user.api_key, library_id);
         {
             let cache = self.items_cache.read().unwrap();
@@ -177,7 +203,10 @@ impl AbsClient for ApiClient {
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to fetch library items: status {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Failed to fetch library items: status {}",
+                response.status()
+            ));
         }
 
         let data = response.json::<AbsItemsResponse>().await?;

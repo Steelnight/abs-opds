@@ -53,16 +53,39 @@ impl LibraryItem {
         if term.is_empty() {
             return true;
         }
-        self.title.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-        self.subtitle.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-        self.description.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-        self.publisher.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-        self.isbn.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-        self.language.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-        self.published_year.as_deref().map_or(false, |s| s.to_lowercase().contains(term)) ||
-        self.authors.iter().any(|a| a.name.to_lowercase().contains(term)) ||
-        self.genres.iter().any(|g| g.to_lowercase().contains(term)) ||
-        self.tags.iter().any(|t| t.to_lowercase().contains(term))
+        self.title
+            .as_deref()
+            .is_some_and(|s| s.to_lowercase().contains(term))
+            || self
+                .subtitle
+                .as_deref()
+                .is_some_and(|s| s.to_lowercase().contains(term))
+            || self
+                .description
+                .as_deref()
+                .is_some_and(|s| s.to_lowercase().contains(term))
+            || self
+                .publisher
+                .as_deref()
+                .is_some_and(|s| s.to_lowercase().contains(term))
+            || self
+                .isbn
+                .as_deref()
+                .is_some_and(|s| s.to_lowercase().contains(term))
+            || self
+                .language
+                .as_deref()
+                .is_some_and(|s| s.to_lowercase().contains(term))
+            || self
+                .published_year
+                .as_deref()
+                .is_some_and(|s| s.to_lowercase().contains(term))
+            || self
+                .authors
+                .iter()
+                .any(|a| a.name.to_lowercase().contains(term))
+            || self.genres.iter().any(|g| g.to_lowercase().contains(term))
+            || self.tags.iter().any(|t| t.to_lowercase().contains(term))
     }
 }
 
@@ -216,19 +239,30 @@ impl AppConfig {
                 "No users configured and OPDS_NO_AUTH is false. Please set OPDS_USERS or enable OPDS_NO_AUTH."
             ));
         }
-        if self.opds_no_auth {
-            if self.abs_noauth_username.trim().is_empty() || self.abs_noauth_password.trim().is_empty() {
-                return Err(anyhow::anyhow!(
+        if self.opds_no_auth
+            && (self.abs_noauth_username.trim().is_empty()
+                || self.abs_noauth_password.trim().is_empty())
+        {
+            return Err(anyhow::anyhow!(
                     "OPDS_NO_AUTH is enabled, but ABS_NOAUTH_USERNAME or ABS_NOAUTH_PASSWORD is not set."
                 ));
-            }
         }
         Ok(())
     }
 }
 
-fn default_port() -> u16 { 3010 }
-fn default_use_proxy() -> bool { false }
-fn default_abs_url() -> String { "http://localhost:3000".to_string() }
-fn default_false() -> bool { false }
-fn default_page_size() -> usize { 20 }
+fn default_port() -> u16 {
+    3010
+}
+fn default_use_proxy() -> bool {
+    false
+}
+fn default_abs_url() -> String {
+    "http://localhost:3000".to_string()
+}
+fn default_false() -> bool {
+    false
+}
+fn default_page_size() -> usize {
+    20
+}

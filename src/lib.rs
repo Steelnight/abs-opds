@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, any},
+    routing::{any, get},
     Router,
 };
 use std::sync::Arc;
@@ -11,14 +11,14 @@ pub mod auth;
 pub mod handlers;
 pub mod i18n;
 pub mod models;
-pub mod service;
-pub mod xml;
 pub mod opds2;
-#[cfg(test)]
-pub mod tests;
 #[cfg(test)]
 #[path = "performance_tests.rs"]
 pub mod performance_tests;
+pub mod service;
+#[cfg(test)]
+pub mod tests;
+pub mod xml;
 
 use api::AbsClient;
 use api::ApiClient;
@@ -32,7 +32,8 @@ pub struct AppState {
     pub i18n: I18n,
     pub api_client_raw: reqwest::Client,
     pub service: LibraryService<dyn AbsClient + Send + Sync>,
-    pub anonymous_user: tokio::sync::RwLock<Option<(crate::models::InternalUser, tokio::time::Instant)>>,
+    pub anonymous_user:
+        tokio::sync::RwLock<Option<(crate::models::InternalUser, tokio::time::Instant)>>,
 }
 
 pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
@@ -44,7 +45,10 @@ pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
 
-    let api_client = Arc::new(ApiClient::new(config.abs_url.clone(), api_client_raw.clone()));
+    let api_client = Arc::new(ApiClient::new(
+        config.abs_url.clone(),
+        api_client_raw.clone(),
+    ));
     let client_dyn: Arc<dyn AbsClient + Send + Sync> = api_client;
 
     let service = LibraryService::new(client_dyn.clone(), config.clone(), i18n.clone());
@@ -61,7 +65,7 @@ pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
 
 pub async fn build_app_state_with_mock(
     config: AppConfig,
-    mock_client: Arc<dyn AbsClient + Send + Sync>
+    mock_client: Arc<dyn AbsClient + Send + Sync>,
 ) -> Arc<AppState> {
     let i18n = I18n::new();
     let api_client_raw = reqwest::Client::builder()
@@ -85,8 +89,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/opds", get(handlers::get_opds_root))
         .route("/opds/libraries/{library_id}", get(handlers::get_library))
-        .route("/opds/libraries/{library_id}/search-definition", get(handlers::search_definition))
-        .route("/opds/libraries/{library_id}/{type}", get(handlers::get_category))
+        .route(
+            "/opds/libraries/{library_id}/search-definition",
+            get(handlers::search_definition),
+        )
+        .route(
+            "/opds/libraries/{library_id}/{type}",
+            get(handlers::get_category),
+        )
         .route("/opds/proxy/{*any}", any(handlers::proxy_handler))
         .layer(TraceLayer::new_for_http())
         .with_state(state)

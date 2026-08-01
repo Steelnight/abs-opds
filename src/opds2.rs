@@ -1,6 +1,6 @@
-use serde::Serialize;
-use crate::models::{Library, LibraryItem, InternalUser};
 use crate::i18n::I18n;
+use crate::models::{InternalUser, Library, LibraryItem};
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct Feed {
@@ -143,8 +143,14 @@ impl Opds2Builder {
 
         let categories = vec![
             (library_id.to_string(), i18n.localize("category.all", lang)),
-            ("authors".to_string(), i18n.localize("category.authors", lang)),
-            ("narrators".to_string(), i18n.localize("category.narrators", lang)),
+            (
+                "authors".to_string(),
+                i18n.localize("category.authors", lang),
+            ),
+            (
+                "narrators".to_string(),
+                i18n.localize("category.narrators", lang),
+            ),
             ("genres".to_string(), i18n.localize("category.genres", lang)),
             ("series".to_string(), i18n.localize("category.series", lang)),
         ];
@@ -356,6 +362,9 @@ impl Opds2Builder {
         serde_json::to_string(&feed).unwrap_or_default()
     }
 
+    // Parameter count reflects the fields an OPDS 2.0 publication feed needs; grouping
+    // them into a struct is a larger API change tracked separately from this lint cleanup.
+    #[allow(clippy::too_many_arguments)]
     pub fn build_publications(
         library_id: &str,
         library_name: &str,
@@ -517,7 +526,9 @@ impl Opds2Builder {
                     Some(
                         item.authors
                             .iter()
-                            .map(|a| Contributor { name: a.name.clone() })
+                            .map(|a| Contributor {
+                                name: a.name.clone(),
+                            })
                             .collect(),
                     )
                 };
@@ -528,7 +539,9 @@ impl Opds2Builder {
                     Some(
                         item.narrators
                             .iter()
-                            .map(|a| Contributor { name: a.name.clone() })
+                            .map(|a| Contributor {
+                                name: a.name.clone(),
+                            })
                             .collect(),
                     )
                 };
