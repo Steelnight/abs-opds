@@ -697,6 +697,78 @@ mod suite {
         assert_eq!(response.status(), StatusCode::OK);
     }
 
+    #[tokio::test]
+    async fn test_repeated_failed_logins_are_backed_off() {
+        // Regression test: every failed Basic-auth attempt used to fall
+        // through to a live ABS login call with no throttling at all, making
+        // this server a brute-force amplifier against the ABS backend.
+        // After the first failure for a username, immediate retries must be
+        // rejected locally without calling ABS again.
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use tower::ServiceExt;
+
+        let login_calls = Arc::new(AtomicU32::new(0));
+        let login_calls_clone = login_calls.clone();
+
+        let mut mock_client = MockAbsClient::new();
+        mock_client.expect_login().returning(move |_, _| {
+            login_calls_clone.fetch_add(1, Ordering::SeqCst);
+            Err(anyhow::anyhow!("invalid credentials"))
+        });
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "someuser:key:correctpass".to_string(),
+            internal_users: vec![InternalUser {
+                name: "someuser".to_string(),
+                api_key: "key".to_string(),
+                password: Some("correctpass".to_string()),
+            }],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        // Basic dGVzdF91c2VyOnBhc3M= decodes to "test_user:pass" in other
+        // tests; here we need "someuser:wrongpass".
+        let auth_header = format!(
+            "Basic {}",
+            base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                b"someuser:wrongpass"
+            )
+        );
+
+        for _ in 0..5 {
+            let req = Request::builder()
+                .uri("/opds")
+                .header("Authorization", auth_header.clone())
+                .body(axum::body::Body::empty())
+                .unwrap();
+            let response = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+
+        assert_eq!(
+            login_calls.load(Ordering::SeqCst),
+            1,
+            "only the first failed attempt should reach ABS; the rest must be backed off locally"
+        );
+    }
+
     #[test]
     fn test_xml_escaping() {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -882,6 +954,15 @@ mod suite {
             Some("secret2")
         );
         assert_eq!(get_token_from_query("foo=bar"), None);
+    }
+
+    #[test]
+    fn test_secure_eq() {
+        use crate::auth::secure_eq;
+        assert!(secure_eq("same", "same"));
+        assert!(!secure_eq("same", "diff"));
+        assert!(!secure_eq("short", "longer_value"));
+        assert!(secure_eq("", ""));
     }
 
     #[test]

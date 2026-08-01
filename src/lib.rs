@@ -41,6 +41,10 @@ pub struct AppState {
     pub validated_tokens: tokio::sync::RwLock<
         std::collections::HashMap<String, (crate::models::InternalUser, tokio::time::Instant)>,
     >,
+    /// Per-username Basic/ABS-login failure count and next-allowed-attempt
+    /// time, for a simple exponential backoff against password guessing.
+    pub login_attempts:
+        tokio::sync::RwLock<std::collections::HashMap<String, (u32, tokio::time::Instant)>>,
 }
 
 pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
@@ -68,6 +72,7 @@ pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
         service,
         anonymous_user: tokio::sync::RwLock::new(None),
         validated_tokens: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+        login_attempts: tokio::sync::RwLock::new(std::collections::HashMap::new()),
     })
 }
 
@@ -91,6 +96,7 @@ pub async fn build_app_state_with_mock(
         service,
         anonymous_user: tokio::sync::RwLock::new(None),
         validated_tokens: tokio::sync::RwLock::new(std::collections::HashMap::new()),
+        login_attempts: tokio::sync::RwLock::new(std::collections::HashMap::new()),
     })
 }
 

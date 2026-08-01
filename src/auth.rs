@@ -6,11 +6,23 @@ use axum::{
 use base64::{engine::general_purpose, Engine as _};
 use std::sync::Arc;
 use std::time::Duration;
+use subtle::ConstantTimeEq;
 use tracing::{debug, error};
 
 use crate::{models::InternalUser, AppState};
 
 const TOKEN_VALIDATION_TTL: Duration = Duration::from_secs(60);
+/// Upper bound on the exponential login backoff below.
+const MAX_LOGIN_BACKOFF: Duration = Duration::from_secs(60);
+
+/// Constant-time string comparison for secrets (passwords, api keys), so a
+/// mismatch can't be timed to learn how many leading bytes were correct.
+/// Like virtually all constant-time compare implementations, this still
+/// short-circuits on length -- that leaks length, not content, which is an
+/// accepted trade-off shared by e.g. `ring` and `ct_codecs`.
+pub(crate) fn secure_eq(a: &str, b: &str) -> bool {
+    a.as_bytes().ct_eq(b.as_bytes()).into()
+}
 
 pub struct AuthUser(pub InternalUser);
 
@@ -90,26 +102,38 @@ where
                 if let Ok(decoded) = general_purpose::STANDARD.decode(code) {
                     if let Ok(creds) = String::from_utf8(decoded) {
                         if let Some((username, password)) = creds.split_once(':') {
-                            // Check internal users first
-                            if let Some(internal_user) =
-                                state.config.internal_users.iter().find(|u| {
-                                    u.name.eq_ignore_ascii_case(username)
-                                        && u.password.as_deref() == Some(password)
-                                })
-                            {
-                                debug!("Internal user authenticated: {}", username);
-                                return Ok(AuthUser(internal_user.clone()));
-                            }
-
-                            // Check ABS login
-                            debug!("Attempting ABS login for: {}", username);
-                            match state.api_client.login(username, password).await {
-                                Ok(user) => {
-                                    debug!("ABS user authenticated: {}", username);
-                                    return Ok(AuthUser(user));
+                            if is_locked_out(&state, username).await {
+                                debug!("Login attempts for {} are backed off", username);
+                            } else {
+                                // Check internal users first
+                                if let Some(internal_user) =
+                                    state.config.internal_users.iter().find(|u| {
+                                        u.name.eq_ignore_ascii_case(username)
+                                            && u.password
+                                                .as_deref()
+                                                .is_some_and(|p| secure_eq(p, password))
+                                    })
+                                {
+                                    debug!("Internal user authenticated: {}", username);
+                                    clear_login_attempts(&state, username).await;
+                                    return Ok(AuthUser(internal_user.clone()));
                                 }
-                                Err(e) => {
-                                    debug!("Authentication failed for user {}: {}", username, e);
+
+                                // Check ABS login
+                                debug!("Attempting ABS login for: {}", username);
+                                match state.api_client.login(username, password).await {
+                                    Ok(user) => {
+                                        debug!("ABS user authenticated: {}", username);
+                                        clear_login_attempts(&state, username).await;
+                                        return Ok(AuthUser(user));
+                                    }
+                                    Err(e) => {
+                                        debug!(
+                                            "Authentication failed for user {}: {}",
+                                            username, e
+                                        );
+                                        record_failed_login(&state, username).await;
+                                    }
                                 }
                             }
                         }
@@ -134,7 +158,7 @@ where
                             .config
                             .internal_users
                             .iter()
-                            .find(|u| u.api_key == token)
+                            .find(|u| secure_eq(&u.api_key, &token))
                         {
                             debug!("Token-authenticated internal user: {}", internal_user.name);
                             return Ok(AuthUser(internal_user.clone()));
@@ -206,6 +230,36 @@ async fn validate_bearer_token(state: &Arc<AppState>, token: &str) -> Option<Int
             None
         }
     }
+}
+
+/// Returns true if `username` is currently backed off from a run of failed
+/// login attempts. Doesn't distinguish "wrong password" from "unknown
+/// username" -- both count, since the point is to slow down guessing either.
+async fn is_locked_out(state: &Arc<AppState>, username: &str) -> bool {
+    let attempts = state.login_attempts.read().await;
+    attempts
+        .get(username)
+        .is_some_and(|(_, not_before)| tokio::time::Instant::now() < *not_before)
+}
+
+/// Records a failed login for `username` and sets an exponentially growing
+/// not-before time (2^failures seconds, capped at MAX_LOGIN_BACKOFF).
+async fn record_failed_login(state: &Arc<AppState>, username: &str) {
+    let mut attempts = state.login_attempts.write().await;
+    let now = tokio::time::Instant::now();
+    // Opportunistic cleanup: drop entries whose backoff expired a while ago,
+    // bounding memory use the same way api.rs's caches do on each write.
+    attempts.retain(|_, (_, not_before)| now < *not_before + MAX_LOGIN_BACKOFF);
+
+    let entry = attempts.entry(username.to_string()).or_insert((0, now));
+    entry.0 = entry.0.saturating_add(1);
+    let backoff = Duration::from_secs(2u64.saturating_pow(entry.0.min(6))).min(MAX_LOGIN_BACKOFF);
+    entry.1 = now + backoff;
+}
+
+async fn clear_login_attempts(state: &Arc<AppState>, username: &str) {
+    let mut attempts = state.login_attempts.write().await;
+    attempts.remove(username);
 }
 
 pub(crate) fn get_token_from_query(query: &str) -> Option<&str> {

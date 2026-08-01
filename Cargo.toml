@@ -27,6 +27,7 @@ envy = "0.4"
 rayon = "1.11.0"
 async-trait = "0.1.89"
 percent-encoding = "2.3"
+subtle = "2.6"
 
 [dev-dependencies]
 criterion = { version = "0.7.0", features = ["async_tokio"] }
