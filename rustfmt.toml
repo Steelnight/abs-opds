@@ -1,0 +1,4 @@
+# Pins the style already applied to the tree so `cargo fmt` produces the same
+# output on any machine and in CI, regardless of the local rustfmt default.
+# Only stable options are used; the project builds on stable Rust (see CI).
+edition = "2021"

@@ -1,0 +1,5 @@
+# build_opds_skeleton and build_publications (src/xml.rs, src/opds2.rs) carry
+# individual #[allow(clippy::too_many_arguments)] with a rationale; this pins
+# the threshold they exceed so a future clippy default change doesn't silently
+# start flagging every other function at a different cutoff.
+too-many-arguments-threshold = 7
