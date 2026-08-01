@@ -35,6 +35,12 @@ pub struct AppState {
     pub service: LibraryService<dyn AbsClient + Send + Sync>,
     pub anonymous_user:
         tokio::sync::RwLock<Option<(crate::models::InternalUser, tokio::time::Instant)>>,
+    /// Bearer tokens supplied via `?token=` that were confirmed valid
+    /// against ABS, cached briefly so every request doesn't re-validate.
+    /// Only successes are cached -- invalid tokens can't grow this map.
+    pub validated_tokens: tokio::sync::RwLock<
+        std::collections::HashMap<String, (crate::models::InternalUser, tokio::time::Instant)>,
+    >,
 }
 
 pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
@@ -61,6 +67,7 @@ pub async fn build_app_state(config: AppConfig) -> Arc<AppState> {
         api_client_raw,
         service,
         anonymous_user: tokio::sync::RwLock::new(None),
+        validated_tokens: tokio::sync::RwLock::new(std::collections::HashMap::new()),
     })
 }
 
@@ -83,6 +90,7 @@ pub async fn build_app_state_with_mock(
         api_client_raw,
         service,
         anonymous_user: tokio::sync::RwLock::new(None),
+        validated_tokens: tokio::sync::RwLock::new(std::collections::HashMap::new()),
     })
 }
 

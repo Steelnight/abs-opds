@@ -5,9 +5,12 @@ use axum::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, error};
 
 use crate::{models::InternalUser, AppState};
+
+const TOKEN_VALIDATION_TTL: Duration = Duration::from_secs(60);
 
 pub struct AuthUser(pub InternalUser);
 
@@ -116,7 +119,17 @@ where
             _ => {
                 // If Authorization header is not present, check query parameter ?token=...
                 if let Some(query) = parts.uri.query() {
-                    if let Some(token) = get_token_from_query(query) {
+                    if let Some(raw_token) = get_token_from_query(query) {
+                        // Clients that percent-encode reserved characters (a
+                        // token containing '+' or '/' run through
+                        // encodeURIComponent, for example) produce %2B/%2F
+                        // sequences here; decode them back before comparing
+                        // or forwarding as a bearer token.
+                        let token = percent_encoding::percent_decode_str(raw_token)
+                            .decode_utf8()
+                            .map(|s| s.into_owned())
+                            .unwrap_or_else(|_| raw_token.to_string());
+
                         if let Some(internal_user) = state
                             .config
                             .internal_users
@@ -127,12 +140,17 @@ where
                             return Ok(AuthUser(internal_user.clone()));
                         }
 
-                        debug!("Using query token as ABS bearer key");
-                        return Ok(AuthUser(InternalUser {
-                            name: "abs_user".to_string(),
-                            api_key: token.to_string(),
-                            password: None,
-                        }));
+                        // Not a configured internal user's key: only accept
+                        // this as an ABS bearer token if ABS itself confirms
+                        // it's valid. Previously any string here was accepted
+                        // unchecked, which turned the proxy into an
+                        // unauthenticated relay to whatever the ABS host
+                        // would serve an arbitrary bearer token.
+                        if let Some(user) = validate_bearer_token(&state, &token).await {
+                            return Ok(AuthUser(user));
+                        }
+
+                        debug!("Query token did not validate against ABS");
                     }
                 }
             }
@@ -145,6 +163,48 @@ where
             axum::http::HeaderValue::from_static("Basic realm=\"OPDS\""),
         );
         Err(res)
+    }
+}
+
+/// Confirms a raw `?token=` value is a working ABS bearer token by using it
+/// to call an authenticated ABS endpoint, since there is no local secret to
+/// check it against. Successes are cached briefly (TOKEN_VALIDATION_TTL) so
+/// repeat requests from the same reader don't each cost an extra upstream
+/// round trip; failures are never cached, so probing many invalid tokens
+/// can't grow the cache.
+async fn validate_bearer_token(state: &Arc<AppState>, token: &str) -> Option<InternalUser> {
+    if token.is_empty() {
+        return None;
+    }
+
+    {
+        let cache = state.validated_tokens.read().await;
+        if let Some((user, expires)) = cache.get(token) {
+            if tokio::time::Instant::now() < *expires {
+                return Some(user.clone());
+            }
+        }
+    }
+
+    let candidate = InternalUser {
+        name: "abs_user".to_string(),
+        api_key: token.to_string(),
+        password: None,
+    };
+
+    match state.api_client.get_libraries(&candidate).await {
+        Ok(_) => {
+            let expires = tokio::time::Instant::now() + TOKEN_VALIDATION_TTL;
+            let mut cache = state.validated_tokens.write().await;
+            let now = tokio::time::Instant::now();
+            cache.retain(|_, (_, exp)| now < *exp);
+            cache.insert(token.to_string(), (candidate.clone(), expires));
+            Some(candidate)
+        }
+        Err(e) => {
+            debug!("Bearer token validation against ABS failed: {}", e);
+            None
+        }
     }
 }
 

@@ -568,6 +568,135 @@ mod suite {
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 
+    #[tokio::test]
+    async fn test_query_token_rejected_when_abs_validation_fails() {
+        // Regression test: previously *any* ?token= value was accepted as an
+        // authenticated ABS bearer key with no check at all. An unknown
+        // token that ABS itself rejects must now fail authentication.
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let mut mock_client = MockAbsClient::new();
+        mock_client
+            .expect_get_libraries()
+            .returning(|_| Err(anyhow::anyhow!("401 from ABS")));
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "".to_string(),
+            internal_users: vec![],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        let req = Request::builder()
+            .uri("/opds?token=not_a_real_token")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn test_query_token_accepted_when_abs_validates_it() {
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let mut mock_client = MockAbsClient::new();
+        mock_client.expect_get_libraries().returning(|user| {
+            if user.api_key == "a_real_abs_token" {
+                Ok(vec![])
+            } else {
+                Err(anyhow::anyhow!("401 from ABS"))
+            }
+        });
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "".to_string(),
+            internal_users: vec![],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        let req = Request::builder()
+            .uri("/opds?token=a_real_abs_token")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_query_token_is_percent_decoded_before_matching() {
+        // A client that runs a token containing '+' through encodeURIComponent
+        // (or similar) produces %2B in the query string. That must decode
+        // back to '+' before comparing against a configured internal user's
+        // api_key, or a legitimate token can never authenticate.
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let mut mock_client = MockAbsClient::new();
+        mock_client.expect_get_libraries().returning(|_| Ok(vec![]));
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "someuser:abc+def:pass".to_string(),
+            internal_users: vec![InternalUser {
+                name: "someuser".to_string(),
+                api_key: "abc+def".to_string(),
+                password: Some("pass".to_string()),
+            }],
+            show_audiobooks: false,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        let req = Request::builder()
+            .uri("/opds?token=abc%2Bdef")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = app.oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
     #[test]
     fn test_xml_escaping() {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
