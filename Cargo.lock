@@ -18,6 +18,7 @@ dependencies = [
  "http",
  "lazy_static",
  "mockall",
+ "percent-encoding",
  "quick-xml",
  "rayon",
  "regex",

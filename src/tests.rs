@@ -410,6 +410,80 @@ mod suite {
         assert_eq!(conditional_resp.status(), StatusCode::NOT_MODIFIED);
     }
 
+    #[tokio::test]
+    async fn test_pagination_self_link_encodes_query_value() {
+        // Regression test: the `self`/pagination links handlers.rs builds
+        // for /opds/libraries/{id} echo the incoming q/name/author/title
+        // query parameters back into a new URL. Unencoded, a value
+        // containing '&' opened an unintended second query parameter.
+        use crate::build_app_state_with_mock;
+        use crate::build_router;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let mut mock_client = MockAbsClient::new();
+
+        let lib_detail = AbsLibrary {
+            id: "lib1".to_string(),
+            name: "Lib 1".to_string(),
+            icon: None,
+        };
+        mock_client
+            .expect_get_library()
+            .returning(move |_, _| Ok(lib_detail.clone()));
+        mock_client
+            .expect_get_items()
+            .returning(move |_, _| Ok(AbsItemsResponse { results: vec![] }));
+
+        let user_ref = InternalUser {
+            name: "test_user".to_string(),
+            api_key: "test_token".to_string(),
+            password: Some("pass".to_string()),
+        };
+
+        let mock_client_arc: Arc<dyn crate::api::AbsClient + Send + Sync> = Arc::new(mock_client);
+
+        let config = AppConfig {
+            port: 3010,
+            use_proxy: false,
+            abs_url: "http://localhost:3000".to_string(),
+            opds_users: "test_user:test_token:pass".to_string(),
+            internal_users: vec![user_ref],
+            show_audiobooks: true,
+            show_char_cards: false,
+            opds_no_auth: false,
+            abs_noauth_username: "".to_string(),
+            abs_noauth_password: "".to_string(),
+            opds_page_size: 20,
+        };
+
+        let state = build_app_state_with_mock(config, mock_client_arc).await;
+        let app = build_router(state);
+
+        let req = Request::builder()
+            .uri("/opds/libraries/lib1?q=Tom%20%26%20Jerry")
+            .header("Authorization", "Basic dGVzdF91c2VyOnBhc3M=")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        let response = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(response.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body_bytes.to_vec()).unwrap();
+
+        assert!(
+            body.contains("q=Tom%20%26%20Jerry"),
+            "expected the re-encoded query value in the self link, got: {}",
+            body
+        );
+        assert!(
+            !body.contains("q=Tom & Jerry") && !body.contains("q=Tom &type"),
+            "raw '&' from the query value must not appear unencoded in a generated link"
+        );
+    }
+
     #[test]
     fn test_xml_escaping() {
         let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -425,6 +499,48 @@ mod suite {
         let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
         assert!(entry.contains("title=\"Dungeons &amp; Dragons\""));
         assert!(entry.contains("href=\"http://localhost:3000/opds?q=foo&amp;type=epub\""));
+    }
+
+    #[test]
+    fn test_encode_query_value() {
+        use crate::xml::encode_query_value;
+
+        assert_eq!(
+            encode_query_value("Simon & Schuster"),
+            "Simon%20%26%20Schuster"
+        );
+        assert_eq!(encode_query_value("Foo #2"), "Foo%20%232");
+        assert_eq!(
+            encode_query_value("plain-text_ok.here~"),
+            "plain-text_ok.here~"
+        );
+    }
+
+    #[test]
+    fn test_build_card_entry_encodes_ampersand_and_hash() {
+        // Regression test: a name containing '&' or '#' used to be
+        // interpolated into the link's query string unencoded. XML-escaping
+        // turned '&' into '&amp;' for valid XML, but decoded back to a
+        // literal '&' the link still meant something different than
+        // intended -- it opened a second query parameter (or, for '#',
+        // started a fragment), silently pointing at the wrong filter.
+        let mut writer = Writer::new(Cursor::new(Vec::new()));
+        let mut url_buf = String::new();
+        OpdsBuilder::build_card_entry(
+            &mut writer,
+            "Simon & Schuster #2",
+            "authors",
+            "lib1",
+            "2026-06-02T12:00:00Z",
+            &mut url_buf,
+        )
+        .expect("Failed to build entry");
+
+        let entry = String::from_utf8(writer.into_inner().into_inner()).unwrap();
+        assert!(entry.contains(
+            "href=\"/opds/libraries/lib1?name=Simon%20%26%20Schuster%20%232&amp;type=authors\""
+        ));
+        assert!(!entry.contains("name=Simon &"));
     }
 
     #[test]

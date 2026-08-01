@@ -260,19 +260,19 @@ pub async fn get_library(
                         let mut url_base = format!("/opds/libraries/{}", library_id);
                         let mut params = Vec::new();
                         if let Some(q) = &query.q {
-                            params.push(format!("q={}", q));
+                            params.push(format!("q={}", crate::xml::encode_query_value(q)));
                         }
                         if let Some(t) = &query.type_ {
                             params.push(format!("type={}", t));
                         }
                         if let Some(n) = &query.name {
-                            params.push(format!("name={}", n));
+                            params.push(format!("name={}", crate::xml::encode_query_value(n)));
                         }
                         if let Some(a) = &query.author {
-                            params.push(format!("author={}", a));
+                            params.push(format!("author={}", crate::xml::encode_query_value(a)));
                         }
                         if let Some(t) = &query.title {
-                            params.push(format!("title={}", t));
+                            params.push(format!("title={}", crate::xml::encode_query_value(t)));
                         }
 
                         if !params.is_empty() {
@@ -415,19 +415,19 @@ pub async fn get_library(
                     let mut url_base = format!("/opds/libraries/{}", library_id);
                     let mut params = Vec::new();
                     if let Some(q) = &query.q {
-                        params.push(format!("q={}", q));
+                        params.push(format!("q={}", crate::xml::encode_query_value(q)));
                     }
                     if let Some(t) = &query.type_ {
                         params.push(format!("type={}", t));
                     }
                     if let Some(n) = &query.name {
-                        params.push(format!("name={}", n));
+                        params.push(format!("name={}", crate::xml::encode_query_value(n)));
                     }
                     if let Some(a) = &query.author {
-                        params.push(format!("author={}", a));
+                        params.push(format!("author={}", crate::xml::encode_query_value(a)));
                     }
                     if let Some(t) = &query.title {
-                        params.push(format!("title={}", t));
+                        params.push(format!("title={}", crate::xml::encode_query_value(t)));
                     }
 
                     if !params.is_empty() {
@@ -557,7 +557,10 @@ pub async fn get_category(
                                 let mut url_base =
                                     format!("/opds/libraries/{}/{}", library_id, type_);
                                 if let Some(start) = &query.start {
-                                    url_base.push_str(&format!("?start={}", start));
+                                    url_base.push_str(&format!(
+                                        "?start={}",
+                                        crate::xml::encode_query_value(start)
+                                    ));
                                 }
                                 Opds2Builder::build_category_items(
                                     &library_id,

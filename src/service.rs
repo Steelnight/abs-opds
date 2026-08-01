@@ -342,7 +342,7 @@ impl<C: AbsClient + ?Sized> LibraryService<C> {
             CategoriesResult::Items { items, page_info } => {
                 let mut url_base = format!("/opds/libraries/{}/{}", library_id, type_);
                 if let Some(start) = &query.start {
-                    url_base.push_str(&format!("?start={}", start));
+                    url_base.push_str(&format!("?start={}", crate::xml::encode_query_value(start)));
                 }
 
                 OpdsBuilder::build_opds_skeleton(

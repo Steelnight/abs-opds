@@ -337,7 +337,9 @@ impl Opds2Builder {
                 Link {
                     href: format!(
                         "/opds/libraries/{}?name={}&type={}",
-                        library_id, item, type_
+                        library_id,
+                        crate::xml::encode_query_value(item),
+                        type_
                     ),
                     rel: None,
                     type_: Some("application/opds+json".to_string()),

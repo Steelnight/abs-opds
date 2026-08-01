@@ -1,5 +1,6 @@
 use crate::models::InternalUser;
 use crate::models::{Library, LibraryItem};
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
 use quick_xml::Writer;
 use std::io::Cursor;
@@ -8,6 +9,23 @@ pub struct OpdsBuilder;
 
 pub fn is_combining_mark(c: char) -> bool {
     unicode_normalization::char::is_combining_mark(c)
+}
+
+// RFC 3986 unreserved characters (ALPHA / DIGIT / "-" / "." / "_" / "~") are
+// left untouched; everything else that could be misread as query-string
+// syntax (&, #, =, space, ...) is percent-encoded.
+const QUERY_VALUE: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
+
+/// Percent-encodes a value (an author/genre/series name, a free-text search
+/// term, ...) before it is interpolated into a query string we generate.
+/// Without this, a name containing `&` or `#` silently truncates the query
+/// or starts a fragment, corrupting the link.
+pub(crate) fn encode_query_value(s: &str) -> std::borrow::Cow<'_, str> {
+    utf8_percent_encode(s, QUERY_VALUE).into()
 }
 
 impl OpdsBuilder {
@@ -316,7 +334,9 @@ impl OpdsBuilder {
         let _ = write!(
             url_buf,
             "/opds/libraries/{}?name={}&type={}",
-            library_id, item, type_
+            library_id,
+            encode_query_value(item),
+            type_
         );
         Self::write_link(
             writer,
